@@ -1,5 +1,5 @@
 /*
-Make a PPM stream from PWM's and Lighting connections on truck.
+Make a PPM stream from PWM's and Lighting connections on RC Controlled truck.
 Copyright (C) 2021  Eddie Pounce
 
 	Channel
@@ -253,7 +253,7 @@ void loop() {
 	
 }
 
-
+//   END		END			END			END
 
 
 
