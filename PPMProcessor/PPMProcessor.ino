@@ -28,24 +28,25 @@ Channel		Function				Pin		Info								Implementation
 TSwitch		Function										
 -------		--------										
 	1 	= 	High Vis Rear Light		12		Off/On								Low/High - LED driver
-	2 	= 	Power On/Off			A3		Circulating Warning Light			Transistor driven 5v power
+	2 	= 	5v Power On/Off			A3		(Circulating Warning Light?)			Transistor driven 5v power
 
 	5	=	Debug - info output		USB		Display with TTY screen on PC (ArduinoIDE or PuTTY)
 											Level   3=everything; 2= Power level & FlashingTrailerMarkerLights; 
 													1=infrequent messages (legs, ...)
-	6	=	Use separate LED to show TSwitch No.
+	6	=	Separate LED for TSwitch No.
 									A0		Number of flashes =  TSwitch No.
 
 Specials & Extras
+		Leg Down Sensor				A1		Sensor to notify legs down			Linear Hall Effect Diode
 		Trailer Brake				A5		Prop to Servo to control Brake		Proportional - Mid to High
 		Running Lights (back)		4		2 sets of side LEDs Off/On			Controlled by channel 2
 		Running Lights (front)		7		2 side and 2 front LEDs Off/On		Controlled by channel 2 and 
 																				flashed when Trailer Brake On
 	
+Suggested Change:  Move "pull up" for IR receiver to breakout board (then use single + earth coax!)
 CL520 LED Driver pulls 0.5mA to control it.	
+Trailer Running Lights = Back-6cm; 4 x 21cm; 7.5cm-Front.  Front Marker Lights = White < 1cm from side.
 ==============================================================
-Trailer Running Lights = Back-7cm; 4 x 21cm; 8cm-Front.  Front Marker Lights = White < 1cm from side.
-
 
     Copyright
 
@@ -105,9 +106,10 @@ const int channelPIN[MAX_CHANNELS+1] = {0,A4,6,0,0,0,0,0,0};	// channel pin
 //		Proportional output - PWM		   1 2 3 4 5 6  7  8 //channel
 const int channelDirectionPIN[MAX_CHANNELS+1] = {0,0,0,9,8,11,0,0,0};	// direction of channel pin 
 //		Used for lights - turn PWM into on/off	   1 2 3 4  5 6 7 8	//channel
-const int channelTimeLimit[MAX_CHANNELS+1] = {0,2000,0,0,0,0,0,0,0};		//millis (1000 = 1 second)
+const int channelTimeLimit[MAX_CHANNELS+1] = {0,3000,0,0,0,0,0,0,0};		//millis (1000 = 1 second)
+//const int channelTimeLimit[MAX_CHANNELS+1] = {0,0,0,0,0,0,0,0,0};
 //		How long channel can stay not centered	   1 2 3 4 5 6 7 8 //channel
-const int channelRateLimit[MAX_CHANNELS+1] = {0,300,500,500,500,500,500,500,500};	//0-500 for proportional
+const int channelRateLimit[MAX_CHANNELS+1] = {0,150,500,500,500,500,500,500,500};	//0-500 for proportional
 //			Max speed/rate for prop channels	  1   2   3   4   5   6   7   8 //channel
 //			250 = half speed max  (channel time goes 1 - 1.5 - 2 msecs; hence the 500)
 //			(used to slow down trailer leg up/down)
@@ -124,6 +126,10 @@ const int runningLightsFlashInc = 100;		// increment for flash sequence
 int runningLightsFlashPosition = 5;			// where in flash sequence
 int runningLightsFlashCurrent = 0;			// current time - runningLightsFlashStart
 long runningLightsFlashStart = 0;			// time previous sequence finished
+
+// -------- Legs Sensor -------------------
+const int legsSensorPin = A1;
+const int legsSensorDownValue = 860;
 
 // ------- Trailer Brake ------------------
 const int trailerBrakePin = A5;
@@ -218,7 +224,8 @@ int monLED_CyleCount = 0;
 bool mon1 = false;			// so that failure messages only appear once in output.
 bool mon2 = false;
 bool mon3 = false;
-int monPowerMin = 4950;		// minimum value of Power monitor before ..... (5120 with Diode via Vin; 4918 via USB)
+//int monPowerMin = 4950;		// minimum value of Power monitor before ..... (5120 with Diode via Vin; 4918 via USB)
+int monPowerMin = 4850;
 long monPowerReadingValue = 0;
 int monPowerReadingCount = 0;
 //====== DEBUG========
@@ -336,6 +343,7 @@ void setup() {
 		// set the output pins (hardware) as needed.
 		if (tSwitchPIN[i] > 0) pinMode(tSwitchPIN[i], OUTPUT);
 	} 
+	pinMode(legsSensorPin, INPUT);								// Linear Hall Effect Sensor - no pullup needed
 	pinMode(trailerBrakePin, OUTPUT);
 	pinMode(runningLightsPin1, OUTPUT);
 	pinMode(runningLightsPin2, OUTPUT);
@@ -362,7 +370,7 @@ void setup() {
 			//TIMSK2 = timmer2Save;			// restore interrupt byte (old situation)
 //	Don't enable here so timer doesn't start before first frame available
 
-	ADMUX = _BV(REFS0) | _BV(MUX3) | _BV(MUX2) | _BV(MUX1);   // setup ADMUX for reading supply power value
+//	ADMUX = _BV(REFS0) | _BV(MUX3) | _BV(MUX2) | _BV(MUX1);   // setup ADMUX for reading supply power value
 		
 } // end setup  
 
@@ -538,7 +546,7 @@ void loop() {
 			if (channelPIN[outChannel] > 0) {
 				if (outChannel == trailerLegsChannel && legsDirectionUp) {			// if legs going up set brakes OFF
 					if (setTrailerBrake(false) && tSwitchValue[MAX_tSwitch-1]) 
-													Serial.println("##### Trailer Brake Off when Legs Up"); //Debug on
+													Serial.println("##### Trailer Brake Off when Legs going up"); //Debug on
 				}
 				//--check for time limit
 				if (channelTimeLimit[outChannel] > 0) {		//is there a limit
@@ -548,13 +556,23 @@ void loop() {
 					} else {	// not in centre (off)
 						if (millis()-channelTimeLimitStart[outChannel] > channelTimeLimit[outChannel]) {	// is limit exceeded
 							channelTimeCopy[outChannel] = PULSE_LENGTH_MID;			// force stick position to centre (off)
-							if (outChannel == trailerLegsChannel && !legsDirectionUp) {		// legs will be fully down
-								if (setTrailerBrake(true) && tSwitchValue[MAX_tSwitch-1])	// set brakes ON
-													Serial.println("##### Trailer Brake On when Legs Down"); //Debug on
-							}
+					//		if (outChannel == trailerLegsChannel && !legsDirectionUp) {		// legs will be fully down
+					//			if (setTrailerBrake(true) && tSwitchValue[MAX_tSwitch-1])	// set brakes ON
+					//								Serial.println("##### Trailer Brake On when Legs Down"); //Debug on
+					//		}
 						}
 					}
 				}
+				// Check for legs fully down - if so stop - using Linear Hall Effect Sensor
+				if (outChannel == trailerLegsChannel && !legsDirectionUp) {		// legs going down
+					//Serial.println(analogRead(legsSensorPin)); 
+					if (analogRead(legsSensorPin) > legsSensorDownValue) {		// legs fully down
+						channelTimeCopy[outChannel] = PULSE_LENGTH_MID;			// force stick position to centre (off)
+						if (setTrailerBrake(true) && tSwitchValue[MAX_tSwitch-1])	// set brakes ON
+												Serial.println("##### Trailer Brake On when Legs Down"); //if Debug on
+					}
+				}
+
 				//--check for rate limit
 				if (channelTimeCopy[outChannel] > PULSE_LENGTH_MID + channelRateLimit[outChannel]) {
 					channelTimeCopy[outChannel] = PULSE_LENGTH_MID + channelRateLimit[outChannel];    // limit rate
@@ -915,13 +933,13 @@ void loop() {
 		debugCyleStart = millis();
 		if (Serial.available() > 0) {		// Set debug on or off from TTY connection
 			String monSerialRead = Serial.readString();
-			if (monSerialRead == "Debug1\n" || monSerialRead == "d1\n") {
+			if (monSerialRead == "Debug1\n" || monSerialRead == "d1\n" || monSerialRead == "d1") {
 				Serial.println("Debug is now turned on - Level 1");
 				tSwitchValue[MAX_tSwitch-1] = 1;
-			} else if (monSerialRead == "Debug2\n" || monSerialRead == "d2\n") {
+			} else if (monSerialRead == "Debug2\n" || monSerialRead == "d2\n" || monSerialRead == "d2") {
 				Serial.println("Debug is now turned on - Level 2");
 				tSwitchValue[MAX_tSwitch-1] = 2;
-			} else if (monSerialRead == "Debug\n" || monSerialRead == "d3\n" || monSerialRead == "Debug3\n") {
+			} else if (monSerialRead == "Debug\n" || monSerialRead == "d3\n" || monSerialRead == "Debug3\n" || monSerialRead == "d3") {
 				Serial.println("Debug is now turned on - Level 3");
 				tSwitchValue[MAX_tSwitch-1] = 3;
 
@@ -949,6 +967,8 @@ void loop() {
 			// Check Power status
 			monPowerReadingValue = monPowerReadingValue / monPowerReadingCount;
 			if ((monPowerReadingValue) < monPowerMin) {
+				Serial.print("--Power reading value: ");
+				Serial.println(monPowerReadingValue);
 				if (tSwitchValue[MAX_tSwitch-1]) Serial.println("===================== Power too low ==========================");
 				// All sorts starts here to show battery low.
 				detachInterrupt(digitalPinToInterrupt(inputPin));	// turn off input
@@ -971,10 +991,13 @@ void loop() {
 				
 			}
 			if (tSwitchValue[MAX_tSwitch-1] >= 1) {
+				Serial.print("Legs position value: "); 
+				Serial.println(analogRead(legsSensorPin)); 
+
 				//Serial.print("--Power reading count: ");
 				//Serial.print(monPowerReadingCount);
 				//Serial.print("  ");
-				Serial.print("--Power reading value: ");
+				Serial.print("Power reading value: ");
 				Serial.println(monPowerReadingValue);
 			}
 			monPowerReadingValue = 0;
@@ -1081,8 +1104,8 @@ bool setTrailerBrake(bool onOff) {
 
 long readVcc() {
 	long result; // Read 1.1V reference against AVcc 
-//	ADMUX = _BV(REFS0) | _BV(MUX3) | _BV(MUX2) | _BV(MUX1); // done in setup!!
-//	delay(2); // Wait for Vref to settle 
+	ADMUX = _BV(REFS0) | _BV(MUX3) | _BV(MUX2) | _BV(MUX1); // done in setup!!
+	delay(2); // Wait for Vref to settle 
 	ADCSRA |= _BV(ADSC); // Convert 
 	while (bit_is_set(ADCSRA,ADSC)); 
 	result = ADCL; 
