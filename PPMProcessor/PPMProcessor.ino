@@ -43,7 +43,7 @@ Specials & Extras
 		Running Lights (front)		7		2 side and 2 front LEDs Off/On		Controlled by channel 2 and 
 																				flashed when Trailer Brake On
 	
-Suggested Change:  Move "pull up" for IR receiver to breakout board (then use single + earth coax!)
+Suggested Change:  Move "pull up" for IR receiver to breakout board (then use single core sheilded!)
 CL520 LED Driver pulls 0.5mA to control it.	
 Trailer Running Lights = Back-6cm; 4 x 21cm; 7.5cm-Front.  Front Marker Lights = White < 1cm from side.
 ==============================================================
@@ -106,7 +106,7 @@ const int channelPIN[MAX_CHANNELS+1] = {0,A4,6,0,0,0,0,0,0};	// channel pin
 //		Proportional output - PWM		   1 2 3 4 5 6  7  8 //channel
 const int channelDirectionPIN[MAX_CHANNELS+1] = {0,0,0,9,8,11,0,0,0};	// direction of channel pin 
 //		Used for lights - turn PWM into on/off	   1 2 3 4  5 6 7 8	//channel
-const int channelTimeLimit[MAX_CHANNELS+1] = {0,3000,0,0,0,0,0,0,0};		//millis (1000 = 1 second)
+const int channelTimeLimit[MAX_CHANNELS+1] = {0,3500,0,0,0,0,0,0,0};		//millis (1000 = 1 second)
 //const int channelTimeLimit[MAX_CHANNELS+1] = {0,0,0,0,0,0,0,0,0};
 //		How long channel can stay not centered	   1 2 3 4 5 6 7 8 //channel
 const int channelRateLimit[MAX_CHANNELS+1] = {0,150,500,500,500,500,500,500,500};	//0-500 for proportional
