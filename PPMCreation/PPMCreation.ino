@@ -73,11 +73,17 @@ volatile static int	frameData[maxChannels+1] = {0,0,0,0,0,0,0,498,499};
 volatile static unsigned long propInputTime1 = 0;
 volatile static unsigned long propInputTime2 = 0;
 //		used to store a time (micros) during input for proportional channels
-// Video Camera Control
+// Video Camera Control / Trottle monitoring
 const int cameraControlPin = A0;
-const int cameraControlChannel = 5;	// reversing light channel
-unsigned long cameraRearOnTime = 0;
-const int cameraRearOffWait = 1000;  // time to delay camera switch to front
+//const int cameraControlChannel = 5;	// reversing light channel
+//unsigned long cameraRearOnTime = 0;
+//const int cameraRearOffWait = 1000;  // time to delay camera switch to front
+const int throttlePin = 8;
+const int throttleReverseValue = 550;
+const int throttleForwardValue = 450;
+volatile static unsigned long throttlePinTime = 0;
+static int throttleValue = 500;
+bool inReverse = false;
 
 // --------------------------------
 // Proportional settings
@@ -127,6 +133,24 @@ void interruptReadChannel2() {
 		propInputTime2 = micros();				// start of pulse
 	}
 }
+
+void pciSetup(byte pin) {
+	// Install Pin Change Interrupt (PCI) for a pin (can be called multiple times)
+	//			(care needed in ISR if multiple pins on a port are used)
+   *digitalPinToPCMSK(pin) |= bit (digitalPinToPCMSKbit(pin));  // enable pin
+    PCIFR  |= bit (digitalPinToPCICRbit(pin)); // clear any outstanding interrupt
+    PCICR  |= bit (digitalPinToPCICRbit(pin)); // enable interrupt for the group
+}
+ 
+ISR (PCINT0_vect) {
+    // For PCINT of pins D8 to D13
+	// Only 1 pin used in port
+	if(digitalRead(throttlePin)) {
+		throttlePinTime = micros();		
+	} else {
+		throttleValue = micros() - throttlePinTime - 1000;	// 
+	}
+} 
 // -------------------------------
 //		Setup
 //--------------------------------
@@ -147,6 +171,12 @@ void setup() {
 	// Camera control pin
 	pinMode(cameraControlPin, OUTPUT);
 	digitalWrite(cameraControlPin, LOW);	// default is front camera
+	pinMode(throttlePin, INPUT);
+	
+	// enable interrupt for pin...  -- Pin Change Interrupt (PCI)
+	pciSetup(throttlePin);
+    //PCICR  |= B00000001;			//"PCIE0" enabeled (PCINT0 to PCINT7)
+	//PCMSK0 |= B00000001;			//"PCINT0" enabeled -> D8 will trigger interrupt
 }
 	
 // -------------------------------
@@ -183,7 +213,6 @@ void loop() {
 		}
 	}
 	
-	
 	// =========== output frame =============
 	// every 20 milliSeconds
 	nowTime = millis();
@@ -204,7 +233,7 @@ void loop() {
 	// =========== Output Video Camera Control - Front/Rear =============
 	// cameraControlChannel - controlled by reversing light on channel 5
 	//				and waits for 1? seconds before switching back to the front camera.
-		if (frameData[cameraControlChannel] > propMidSetting) {
+	/*	if (frameData[cameraControlChannel] > propMidSetting) {
 			if (nowTime - cameraRearOnTime > cameraRearOffWait) {
 				digitalWrite(cameraControlPin, LOW);
 			}
@@ -212,8 +241,20 @@ void loop() {
 			digitalWrite(cameraControlPin, HIGH);
 			cameraRearOnTime = nowTime;
 		}
-	
-
+	*/
+	// =========== Output Video Camera Control - Front/Rear =============
+	// cameraControlPin - controlled by monitoring Throttle and keeping F/R status.
+		if (throttleValue > 510) inReverse = true;
+		if (throttleValue < 495) inReverse = false;
+		if (inReverse) {
+			digitalWrite(cameraControlPin, HIGH);
+		} else {
+			digitalWrite(cameraControlPin, LOW);
+		}
+		if (debugMode && inReverse) {
+			Serial.print(" Reversing. Throttle value: ");
+			Serial.println(throttleValue);
+		}
 	}
 			
 	// ============== Output Debug info - Frame data and flash LED
@@ -221,8 +262,8 @@ void loop() {
 		digitalWrite(LED_BUILTIN, HIGH);	// turn on LED once a second
 				
 		if (debugMode) {
-			Serial.print("\nFrame:  ");
-			Serial.print("FrameTime: ");
+			Serial.print("Frame:  ");
+			Serial.print("Time: ");
 			Serial.print(frameTime);
 			Serial.print(";  ");
 			for ( int i = 0; i <= maxChannels; i++ ){
@@ -232,12 +273,15 @@ void loop() {
 				Serial.print(frameData[i]);
 				Serial.print("; ");
 			}
+			Serial.print("Throttle value: ");
+			Serial.print(throttleValue);
 			Serial.println("");
 		}
 
 		// Set debug on or off
 		if (Serial.available() > 0) {
-			if (Serial.readString() == "DebugON\n") {
+			String monSerialRead = Serial.readString();
+			if (monSerialRead == "DebugON\n" || monSerialRead == "d\n" || monSerialRead == "d") {
 				Serial.println("Debug is now turned on");
 				debugMode = true;
 			} else {
@@ -246,11 +290,8 @@ void loop() {
 				debugMode = false;
 			}
 		}
-	
 		monTime = millis();
-	}	
-	
-	
+	}		
 }
 
 //   END		END			END			END
