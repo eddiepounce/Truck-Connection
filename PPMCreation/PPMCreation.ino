@@ -53,8 +53,9 @@ const int framePulseAndAddition = 500;
 				// length of pulses and half the additional time to make PPM give 1 to 2 mS
 int debugMode = false;
 //int debugMode = true;		// print frame values
-
+// Channels
 //		1=legs, 2=rear/stop 3=ind, 4=ind, 5=reversing, 6=TSwitch
+//		Throttle monitor.
 				
 const char channelType[] =   {"-PASSSPSS"};  
 //								12345678	// channel
@@ -71,19 +72,17 @@ volatile static int	frameData[maxChannels+1] = {0,0,0,0,0,0,0,498,499};
 //		0 - 1000 microS							  1 2 3 4 5 6 7 8  //channel
 //volatile static unsigned long propInputTime[maxChannels+1] = {0,0,0,0,0,0,0,0,0};
 volatile static unsigned long propInputTime1 = 0;
-volatile static unsigned long propInputTime2 = 0;
-//		used to store a time (micros) during input for proportional channels
+volatile static unsigned long propInputTime6 = 0;
+//		used to store a time (micros) during input for proportional channels (ext interrupts)
 // Video Camera Control / Trottle monitoring
-const int cameraControlPin = A0;
-//const int cameraControlChannel = 5;	// reversing light channel
-//unsigned long cameraRearOnTime = 0;
-//const int cameraRearOffWait = 1000;  // time to delay camera switch to front
-const int throttlePin = 8;
-const int throttleReverseValue = 550;
-const int throttleForwardValue = 450;
+const int cameraControlPin = A0;			// Selects forward or reverse camera
+const int throttlePin = 8;					// Throttle monitoring pin
+const int throttleReverseValue = 600;		// if more - set motion to Reverse
+const int throttleForwardValue = 450;		// if less - set motion to Forward
 volatile static unsigned long throttlePinTime = 0;
-static int throttleValue = 500;
-bool inReverse = false;
+//		used to store a time (micros) during input for pin change interrupt
+static int throttleValue = 500;				// initial value - mid point
+bool inReverse = false;						// current motion - Forward/Reverse
 
 // --------------------------------
 // Proportional settings
@@ -93,7 +92,6 @@ const int propMidSetting =500;
 const int propMaxSetting = 1000;
 const int analogOffValue = 900;		// for Analogue input (inverted)
 const int analogOnValue = 350;		// for Analogue input (inverted)
-const int propMaxInput = 1200;		// maximum allowed proportional time (before error)	
 
 // -------------------------
 // for output of frames and debug info
@@ -106,31 +104,18 @@ unsigned long monTime = 0;
 // Interrupt handler for channelx
 //--------------------------
 void interruptReadChannel1() {
-	volatile static unsigned long tempTime;
-	if (propInputTime1 > 0) {					// end of pulse
-		tempTime = micros() - propInputTime1;	// pulse length
-		if (tempTime < propMaxInput + 1000)  {	// if pulse a sensible length (we haven't got lost!)
-			frameData[1] = tempTime - 1000;		// set frame data
-			propInputTime1 = 0;					//   and zero the pulse time
-		} else {
-			propInputTime1 = micros();			// pulse too long - this must be the start!
-		}
+	if(digitalRead(channelPIN[1])) {
+		propInputTime1 = micros();		
 	} else {
-		propInputTime1 = micros();				// start of pulse
+		frameData[1] = micros() - propInputTime1 - 1000;	// 
 	}
 }
-void interruptReadChannel2() {
-	volatile static unsigned long tempTime;
-	if (propInputTime2 > 0) {					// end of pulse
-		tempTime = micros() - propInputTime2;	// pulse length
-		if (tempTime < propMaxInput + 1000)  {	// if pulse a sensible length (we haven't got lost!)
-			frameData[6] = tempTime - 1000;		// set frame data
-			propInputTime2 = 0;					//   and zero the pulse time
-		} else {
-			propInputTime2 = micros();			// pulse too long - this must be the start!
-		}
+
+void interruptReadChannel6() {
+	if(digitalRead(channelPIN[6])) {
+		propInputTime6 = micros();		
 	} else {
-		propInputTime2 = micros();				// start of pulse
+		frameData[6] = micros() - propInputTime6 - 1000;	// 
 	}
 }
 
@@ -161,18 +146,14 @@ void setup() {
 	pinMode(outPin, OUTPUT);
 	for (int i = 1; i <= maxChannels; i++){
 		// set the input pins (hardware) as needed.
-		if (channelPIN[i] > 0) pinMode(channelPIN[i], INPUT_PULLUP);
-//		if (channelPIN[i] > 0 && i != 5) pinMode(channelPIN[i], INPUT_PULLUP);
-//		if (channelPIN[i] > 0 && i == 5) pinMode(channelPIN[i], INPUT);
-		
+		if (channelPIN[i] > 0) pinMode(channelPIN[i], INPUT_PULLUP);		
 	}
-	attachInterrupt(digitalPinToInterrupt(2), interruptReadChannel1, CHANGE);
-	attachInterrupt(digitalPinToInterrupt(3), interruptReadChannel2, CHANGE);
+	attachInterrupt(digitalPinToInterrupt(channelPIN[1]), interruptReadChannel1, CHANGE);
+	attachInterrupt(digitalPinToInterrupt(channelPIN[6]), interruptReadChannel6, CHANGE);
 	// Camera control pin
 	pinMode(cameraControlPin, OUTPUT);
 	digitalWrite(cameraControlPin, LOW);	// default is front camera
 	pinMode(throttlePin, INPUT);
-	
 	// enable interrupt for pin...  -- Pin Change Interrupt (PCI)
 	pciSetup(throttlePin);
     //PCICR  |= B00000001;			//"PCIE0" enabeled (PCINT0 to PCINT7)
@@ -231,21 +212,9 @@ void loop() {
 		digitalWrite(LED_BUILTIN, LOW);		// turn off LED
 
 	// =========== Output Video Camera Control - Front/Rear =============
-	// cameraControlChannel - controlled by reversing light on channel 5
-	//				and waits for 1? seconds before switching back to the front camera.
-	/*	if (frameData[cameraControlChannel] > propMidSetting) {
-			if (nowTime - cameraRearOnTime > cameraRearOffWait) {
-				digitalWrite(cameraControlPin, LOW);
-			}
-		} else {
-			digitalWrite(cameraControlPin, HIGH);
-			cameraRearOnTime = nowTime;
-		}
-	*/
-	// =========== Output Video Camera Control - Front/Rear =============
 	// cameraControlPin - controlled by monitoring Throttle and keeping F/R status.
-		if (throttleValue > 510) inReverse = true;
-		if (throttleValue < 495) inReverse = false;
+		if (throttleValue > throttleReverseValue) inReverse = true;
+		if (throttleValue < throttleForwardValue) inReverse = false;
 		if (inReverse) {
 			digitalWrite(cameraControlPin, HIGH);
 		} else {
