@@ -126,6 +126,7 @@ const int runningLightsFlashInc = 100;		// increment for flash sequence
 int runningLightsFlashPosition = 5;			// where in flash sequence
 int runningLightsFlashCurrent = 0;			// current time - runningLightsFlashStart
 long runningLightsFlashStart = 0;			// time previous sequence finished
+bool runningLightsOn = false;
 
 // -------- Legs Sensor -------------------
 const int legsSensorPin = A1;
@@ -134,7 +135,7 @@ const int legsSensorDownValue = 860;
 // ------- Trailer Brake ------------------
 const int trailerBrakePin = A5;
 const int trailerLegsChannel = 1;
-static bool trailerBrakeOn = true;		// don't actually know but startup sets it to false so needs to be true here.
+static bool trailerBrakeOn = false;		// don't actually know but startup sets it so needs to be opposite here.
 unsigned long trailerBrakeTimeOn;
 const int trailerBrakeOnDelay = 2000;	// delay before brake is automatically tuned off
 
@@ -220,10 +221,10 @@ unsigned long monLED_FlashPulseStart = 0;
 int monLED_FlashPulse = 1;
 int monLED_FlashPulseCount = 0;
 unsigned long monTimeOfLastCycle = 0;	// i.e last output cycle started
+unsigned long monTimeElapse = 0;		// working value to save calls to millis
 int monLED_CyleCount = 0;
-bool mon1 = false;			// so that failure messages only appear once in output.
-bool mon2 = false;
-bool mon3 = false;
+bool mon0 = true; bool mon1 = false;			// so that failure messages only appear once in output.
+bool mon2 = false; bool mon3 = false; bool mon4 = false;
 //int monPowerMin = 4950;		// minimum value of Power monitor before ..... (5120 with Diode via Vin; 4918 via USB)
 int monPowerMin = 4850;
 long monPowerReadingValue = 0;
@@ -254,6 +255,11 @@ static volatile unsigned long diffTime = 0;
 //static volatile uint16_t longFrameCount=0;
 //static volatile uint16_t shortFrameCount=0;
 //static volatile uint16_t frameInterruptCount=0;	// number of times through before data is dealt with
+
+
+//  Emergency restart of sketch!!!!!  Things happen - should never be needed.
+void(* resetSketch) (void) = 0;
+
 
 void interruptReadChannels() {
 	nowTime = micros();			// get current time - microseconds
@@ -348,8 +354,10 @@ void setup() {
 	pinMode(runningLightsPin1, OUTPUT);
 	pinMode(runningLightsPin2, OUTPUT);
 	
-	setTrailerBrake(false);			// set trailer brake off in case - no idea of state of trailer at switch on.
-	if (tSwitchValue[MAX_tSwitch-1]) Serial.println("##### Trailer Brake Off at start-up"); //Debug on
+	//setTrailerBrake(false);			// set trailer brake off in case - no idea of state of trailer at switch on.
+	//if (tSwitchValue[MAX_tSwitch-1]) Serial.println("##### Trailer Brake Off at start-up"); //Debug 
+	setTrailerBrake(true);			// set trailer brake on.
+	if (tSwitchValue[MAX_tSwitch-1]) Serial.println("##### Trailer Brake On at start-up"); //Debug 
 	
 	bitWrite(TIMSK2, OCIE2A, 0); // disable interrupt 
 	//set timer2 interrupt
@@ -398,12 +406,14 @@ void loop() {
 		//--Monitoring--
 		monLED_CyleCount++;
 		monTimeOfLastCycle = millis();
-		mon1=false; mon2=false; mon3=false;
+		mon1=true; mon2=true; mon3=true; mon4=true;
 		//--Monitoring--end
 		debugCycleTime = 1000;  // reset debugCycleTime to 1 second 
 								// (set very slow if connection lost (no frames seen)
 		bitWrite(TIMSK2, OCIE2A, 1); 	// enable timer interrupt  (disabled for startup)
 	}
+	monTimeElapse = millis() - monTimeOfLastCycle;  
+
 
 	// --------------------------------------------------------------
 	// ========    processing for one channel at a time    ==========
@@ -476,18 +486,20 @@ void loop() {
 			// ----------------------
 			// if > mid-switch A & < B (nearly in middle) - turn on extra "Specia1" output
 			// so that the running lights are on when rear lights are on But not for just brake lights.
-			// There are to output pins so front running lights can be flashed when trailer brake on.
+			// There are two output pins so front running lights can be flashed when trailer brake on.
 			if (channelSpecialType[outChannel]) {
 				//special on if at middle
-				if (channelTimeCopy[outChannel] > SWITCH_MID_SETTING_A 
+				if ((!runningLightsOn || !trailerBrakeOn) && channelTimeCopy[outChannel] > SWITCH_MID_SETTING_A 
 							&& channelTimeCopy[outChannel] < SWITCH_MID_SETTING_B) {
 					digitalWrite(runningLightsPin1, HIGH);  // set on
 					digitalWrite(runningLightsPin2, HIGH);  // set on
+					runningLightsOn = true;
 				} 
 				//special off if at low  (can't use and "else" here - channel has 3 positions)
-				if (channelTimeCopy[outChannel] < SWITCH_OFF_SETTING) {
+				if ((runningLightsOn || !trailerBrakeOn) && channelTimeCopy[outChannel] < SWITCH_OFF_SETTING) {
 					digitalWrite(runningLightsPin1, LOW);  // set off
 					digitalWrite(runningLightsPin2, LOW);  // set off
+					runningLightsOn = false;
 				}
 			}
 			if (channelPIN[outChannel] > 0) {
@@ -798,7 +810,7 @@ void loop() {
 //Serial.println("--Brake4 ");
 			runningLightsFlashPosition = 0;
 			runningLightsFlashStart = millis();
-			if (tSwitchValue[MAX_tSwitch-1] >= 2) Serial.println("Trailer Brake On - Lights Flashing");
+			if (mon2 && tSwitchValue[MAX_tSwitch-1] >= 2) Serial.println("Trailer Brake On - Lights Flashing");
 			runningLightsFlashCurrent = 0;
 		} else {
 			runningLightsFlashCurrent = millis() - runningLightsFlashStart;
@@ -821,31 +833,32 @@ void loop() {
 	// --  Monitoring  --
 	// ----------------------------------------------------------------------
 
-	// No input for 0.2	sec (some frames seen)
-	if (monLED_CyleCount > 50 && (millis() - monTimeOfLastCycle) > 500) {  // 50 frames seen + 0.2 sec 
+	// No input for 0.5	sec (some frames seen)
+	if (mon0 && monLED_CyleCount > 50 && (monTimeElapse) > 500) {  // 50 frames seen + 0.5 sec 
+		mon0 = false; mon1=true;
 		// lost input signal - apply trailer brakes
 		if (setTrailerBrake(true) && tSwitchValue[MAX_tSwitch-1]) 
 								Serial.println("##### Trailer Brake On as lost connection"); //Debug on
 //		}
 	}
 	// No input for 1 sec (some frames seen)
-	if (!mon1 && monLED_CyleCount > 50 && (millis() - monTimeOfLastCycle) > 1000) {  // 50 frames + 1 sec 
-		mon1 = true;
+	if (mon1 && monLED_CyleCount > 50 && (monTimeElapse) > 1000) {  // 50 frames + 1 sec 
+		mon1 = false; mon2=true; 
 		// lost input signal - singal pulse
 		monLED_OnTime = 50; monLED_OffTime = 100; monLED_FlashPulse = 1; monLED_Gap = 500; 
 		if (tSwitchValue[MAX_tSwitch-1]) Serial.println("@@@@@@ Lost connection @@@@@@"); //Debug on
-		debugCycleTime = 3000;
+		//debugCycleTime = 3000;
 	}
 	// No input for over 10secs  (some frames seen)
-	if (!mon2 && monLED_CyleCount > 50 && (millis() - monTimeOfLastCycle) > 10000) { // 50 frames + 10secs
-		mon2 = true;
+	if (mon2 && monLED_CyleCount > 50 && (monTimeElapse) > 10000) { // 50 frames + 10secs
+		mon2 = false; mon3=true; 
 		//double pulse
 		monLED_OnTime = 50; monLED_OffTime = 100; monLED_FlashPulse = 2; monLED_Gap = 500; 
 		if (tSwitchValue[MAX_tSwitch-1]) Serial.println("@@@@@@ Lost connection for 10 seconds @@@@@@"); //Debug on
 	}
 	// No input for over 5 mins  (some frames seen)
-	if (!mon3 && monLED_CyleCount > 50 && (millis() - monTimeOfLastCycle) > 300000) { // 5 mins
-		mon3 = true;
+	if (mon3 && monLED_CyleCount > 50 && (monTimeElapse) > 300000) { // 5 mins
+		mon3 = false;  mon4=true; 
 		//back to fast blinking
 		monLED_OnTime = 10; monLED_OffTime = 100; monLED_FlashPulse = 1; monLED_Gap = 100; 
 		//reset count of frames seen
@@ -853,13 +866,10 @@ void loop() {
 		if (tSwitchValue[MAX_tSwitch-1]) Serial.println("@@@@@@ Lost connection for 5 minutes @@@@@@"); //Debug on
 	}
 	// No input for over 10 mins
-	//  Emergency restart of sketch!!!!!  Things happen - should never be needed.
-	void(* resetFunc) (void) = 0;
-
-	if ((millis() - monTimeOfLastCycle) > 600000) { // 10 mins
+	if (mon4 && (monTimeElapse) > 600000) { // 10 mins
 		// reset !!!!
 		if (tSwitchValue[MAX_tSwitch-1]) Serial.println("@@@@@@ Lost connection for 10 minuts - serious!! @@@@@@"); //Debug on
-		resetFunc();
+		resetSketch();
 	}
 	//--Monitoring--end
 
@@ -915,7 +925,7 @@ void loop() {
 				tSwitchLED_FlashTimeStart = 0;							//reset flash
 			}
 		}
-		if (monLED_CyleCount > 50 && (millis() - monTimeOfLastCycle) < 500) {	// recently had a frame - 0.5 secs
+		if (monLED_CyleCount > 50 && monTimeElapse < 500) {	// recently had a frame - 0.5 secs
 			monLED_OnTime = 50; monLED_OffTime = 500; 
 			monLED_FlashPulse = 1;  // use basic OK flash.
 			monLED_Gap = 1500; 
@@ -923,7 +933,7 @@ void loop() {
 	} else {
 		digitalWrite(tSwitchPIN[MAX_tSwitch], LOW);
 		// set different build in LED flash
-		if (monLED_CyleCount > 50 && (millis() - monTimeOfLastCycle) < 500) {	// recently had a frame - 0.5 secs
+		if (monLED_CyleCount > 50 && monTimeElapse < 500) {	// recently had a frame - 0.5 secs
 			monLED_OnTime = 50; monLED_OffTime = 400; 
 			monLED_FlashPulse = tSwitchNo;  
 			monLED_Gap = 1500;
@@ -1006,7 +1016,7 @@ void loop() {
 		}
 			
 		// -- Output Debug info if required --
-		if (tSwitchValue[MAX_tSwitch-1] >= 3) {  // Debug ON
+		if (tSwitchValue[MAX_tSwitch-1] >= 3 && monTimeElapse < 4000) {  // Debug ON
 			Serial.print("Frames: ");				 // print the status of the channels & switches if Sw6 on
 			Serial.print(monLED_CyleCount);	
 			for ( int i = 0; i <= maxChannels; i++ ){
