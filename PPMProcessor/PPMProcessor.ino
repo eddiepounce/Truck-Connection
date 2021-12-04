@@ -799,6 +799,7 @@ void loop() {
 			runningLightsFlashPosition = 0;
 			runningLightsFlashStart = millis();
 			if (tSwitchValue[MAX_tSwitch-1] >= 2) Serial.println("Trailer Brake On - Lights Flashing");
+			runningLightsFlashCurrent = 0;
 		} else {
 			runningLightsFlashCurrent = millis() - runningLightsFlashStart;
 		}
