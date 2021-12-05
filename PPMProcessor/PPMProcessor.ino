@@ -39,12 +39,13 @@ TSwitch		Function
 Specials & Extras
 		Leg Down Sensor				A1		Sensor to notify legs down			Linear Hall Effect Diode
 		Trailer Brake				A5		Prop to Servo to control Brake		Proportional - Mid to High
-		Running Lights (back)		4		2 sets of side LEDs Off/On			Controlled by channel 2
-		Running Lights (front)		7		2 side and 2 front LEDs Off/On		Controlled by channel 2 and 
+		Running Lights (Back Right)	4		2 sets of side LEDs Off/On			Controlled by channel 2
+					   (Back Left)	5
+		Running Lights (Front)		7		2 side and 2 front LEDs Off/On		Controlled by channel 2 and 
 																				flashed when Trailer Brake On
-	
+
 Suggested Change:  Move "pull up" for IR receiver to breakout board (then use single core sheilded!)
-CL520 LED Driver pulls 0.5mA to control it.	
+Lorry Idle = 210mA;  Camera & TX = 295mA.   (CL520 LED Driver pulls 0.5mA to control it.)
 Trailer Running Lights = Back-6cm; 4 x 21cm; 7.5cm-Front.  Front Marker Lights = White < 1cm from side.
 ==============================================================
 
@@ -120,7 +121,8 @@ const int channelSpecialType[MAX_CHANNELS+1] = {0,0,1,0,0,0,0,0,0};  //type
 // ------- Running Lights ------------------
 bool legsDirectionUp;
 const int runningLightsPin1 = 7;		// front running lights (2 front side & front white marker lights)
-const int runningLightsPin2 = 4;		// other running lights
+const int runningLightsPin2 = 4;		// Rear Right Side Running Lights
+const int runningLightsPin3 = 5;		// Rear Left Side Running Lights
 const int runningLightsFlashPeriod = 1000;	// flash sequence every ....
 const int runningLightsFlashInc = 100;		// increment for flash sequence
 int runningLightsFlashPosition = 5;			// where in flash sequence
@@ -353,6 +355,7 @@ void setup() {
 	pinMode(trailerBrakePin, OUTPUT);
 	pinMode(runningLightsPin1, OUTPUT);
 	pinMode(runningLightsPin2, OUTPUT);
+	pinMode(runningLightsPin3, OUTPUT);
 	
 	//setTrailerBrake(false);			// set trailer brake off in case - no idea of state of trailer at switch on.
 	//if (tSwitchValue[MAX_tSwitch-1]) Serial.println("##### Trailer Brake Off at start-up"); //Debug 
@@ -493,12 +496,14 @@ void loop() {
 							&& channelTimeCopy[outChannel] < SWITCH_MID_SETTING_B) {
 					digitalWrite(runningLightsPin1, HIGH);  // set on
 					digitalWrite(runningLightsPin2, HIGH);  // set on
+					digitalWrite(runningLightsPin3, HIGH);  // set on
 					runningLightsOn = true;
 				} 
 				//special off if at low  (can't use and "else" here - channel has 3 positions)
 				if ((runningLightsOn || !trailerBrakeOn) && channelTimeCopy[outChannel] < SWITCH_OFF_SETTING) {
 					digitalWrite(runningLightsPin1, LOW);  // set off
 					digitalWrite(runningLightsPin2, LOW);  // set off
+					digitalWrite(runningLightsPin3, LOW);  // set off
 					runningLightsOn = false;
 				}
 			}
