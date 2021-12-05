@@ -20,8 +20,8 @@ Channel		Function				Pin		Info								Implementation
 -------		--------				---		----								--------------
 	1 	 	Legs					A4		Prop to ESC to control Legs Motor	P - Proportional
 	2 	 	Rear/Stop Lights		6		PWM to LEDs (Off/Mid/High)			l - Prop whole swing - LED driver
-	3 	 	Indicator				8		Off/On								S - using direction - LED driver
-	4 	 	Indicator				9		Off/On								S - using direction - LED driver
+	3 	 	Indicator Left			8		Off/On								S - using direction - LED driver
+	4 	 	Indicator Right			9		Off/On								S - using direction - LED driver
 	5 	 	Reversing Light			11		Off/On								S - using direction - LED driver
 	6 	 	ToggleSwitch			-											T - Off/On, Mid/High & Mid/Low
 
@@ -115,20 +115,23 @@ const int channelRateLimit[MAX_CHANNELS+1] = {0,150,500,500,500,500,500,500,500}
 //			250 = half speed max  (channel time goes 1 - 1.5 - 2 msecs; hence the 500)
 //			(used to slow down trailer leg up/down)
 //			----------------------------------
-const int channelSpecialType[MAX_CHANNELS+1] = {0,0,1,0,0,0,0,0,0};  //type
+const int channelSpecialType[MAX_CHANNELS+1] = {0,0,1,2,3,0,0,0,0};  //type
 //		Type of processing for special things	  1 2 3 4 5 6 7 8    //channel
-//				1 = Turn running lights on when rear lights are on (but nor for brake lights!)
+//				l - 1 = Turn running lights on when rear lights are on (but nor for brake lights!)
+//				S - 2 = Flash rear running lights with indicator.
+//				S - 3 = Flash rear running lights with indicator.
 // ------- Running Lights ------------------
 bool legsDirectionUp;
-const int runningLightsPin1 = 7;		// front running lights (2 front side & front white marker lights)
-const int runningLightsPin2 = 4;		// Rear Right Side Running Lights
-const int runningLightsPin3 = 5;		// Rear Left Side Running Lights
+const int runningLightsPin1 = 7;		// front running lights - pin# (2 front side & front white marker lights)
+const int runningLightsPin2 = 4;		// Rear Right Side Running Lights - pin#
+const int runningLightsPin3 = 5;		// Rear Left Side Running Lights - pin#
 const int runningLightsFlashPeriod = 1000;	// flash sequence every ....
 const int runningLightsFlashInc = 100;		// increment for flash sequence
 int runningLightsFlashPosition = 5;			// where in flash sequence
 int runningLightsFlashCurrent = 0;			// current time - runningLightsFlashStart
-long runningLightsFlashStart = 0;			// time previous sequence finished
-bool runningLightsOn = false;
+unsigned long runningLightsFlashStart = 0;			// time previous sequence finished
+unsigned long turnLeftStart = 0;
+unsigned long turnRightStart = 0;
 
 // -------- Legs Sensor -------------------
 const int legsSensorPin = A1;
@@ -490,21 +493,20 @@ void loop() {
 			// if > mid-switch A & < B (nearly in middle) - turn on extra "Specia1" output
 			// so that the running lights are on when rear lights are on But not for just brake lights.
 			// There are two output pins so front running lights can be flashed when trailer brake on.
-			if (channelSpecialType[outChannel]) {
+			if (channelSpecialType[outChannel] == 1) {
 				//special on if at middle
-				if ((!runningLightsOn || !trailerBrakeOn) && channelTimeCopy[outChannel] > SWITCH_MID_SETTING_A 
+				unsigned long localTime = millis();
+				if (channelTimeCopy[outChannel] > SWITCH_MID_SETTING_A 
 							&& channelTimeCopy[outChannel] < SWITCH_MID_SETTING_B) {
-					digitalWrite(runningLightsPin1, HIGH);  // set on
-					digitalWrite(runningLightsPin2, HIGH);  // set on
-					digitalWrite(runningLightsPin3, HIGH);  // set on
-					runningLightsOn = true;
+					if (localTime - runningLightsFlashStart > 2000) digitalWrite(runningLightsPin1, HIGH);  // set on
+					if (localTime - turnLeftStart > 500) digitalWrite(runningLightsPin2, HIGH);  // set on
+					if (localTime - turnRightStart > 500) digitalWrite(runningLightsPin3, HIGH);  // set on
 				} 
 				//special off if at low  (can't use and "else" here - channel has 3 positions)
-				if ((runningLightsOn || !trailerBrakeOn) && channelTimeCopy[outChannel] < SWITCH_OFF_SETTING) {
-					digitalWrite(runningLightsPin1, LOW);  // set off
+				if (channelTimeCopy[outChannel] < SWITCH_OFF_SETTING) {
+					if (localTime - runningLightsFlashStart > 2000) digitalWrite(runningLightsPin1, LOW);  // set off
 					digitalWrite(runningLightsPin2, LOW);  // set off
 					digitalWrite(runningLightsPin3, LOW);  // set off
-					runningLightsOn = false;
 				}
 			}
 			if (channelPIN[outChannel] > 0) {
@@ -608,6 +610,7 @@ void loop() {
 //----------------
 		case 'S':					//Switch
 					//only diff to P is output forced to HIGH, MID, LOW
+
 			if (channelTimeCopy[outChannel] < SWITCH_OFF_SETTING) {
 				channelTimeCopy[outChannel] = PULSE_LENGTH_MIN;
 			} else if (channelTimeCopy[outChannel] > SWITCH_ON_SETTING) {
@@ -617,10 +620,27 @@ void loop() {
 			}
 			//--set direction pin
 			if (channelDirectionPIN[outChannel] > 0 && (channelTimeCopy[outChannel]-PULSE_LENGTH_MID) > 0 ) {
-				digitalWrite(channelDirectionPIN[outChannel], HIGH);// direction on
+				if (!digitalRead(channelDirectionPIN[outChannel])) digitalWrite(channelDirectionPIN[outChannel], HIGH); //on
+				// --- Special Type 2&3 ---
+				if (channelSpecialType[outChannel] == 2) {
+					digitalWrite(runningLightsPin2, HIGH);
+					turnLeftStart = millis();
+				}
+				if (channelSpecialType[outChannel] == 3) {
+					digitalWrite(runningLightsPin3, HIGH);
+					turnRightStart = millis();
+				}
 			} else {
-				digitalWrite(channelDirectionPIN[outChannel], LOW);// direction off
+				if (digitalRead(channelDirectionPIN[outChannel])) digitalWrite(channelDirectionPIN[outChannel], LOW); //off
+				// --- Special Type 2&3 ---
+				if (channelSpecialType[outChannel] == 2) {
+					if (millis() - turnLeftStart < 100) digitalWrite(runningLightsPin2, LOW);
+				}
+				if (channelSpecialType[outChannel] == 3) {
+					if (millis() - turnRightStart < 100) digitalWrite(runningLightsPin3, LOW);
+				}
 			}
+
 			if (channelPIN[outChannel] > 0) {
 				//--check for time limit
 				if (channelTimeLimit[outChannel] > 0) {		//is there a limit
@@ -852,7 +872,6 @@ void loop() {
 		// lost input signal - singal pulse
 		monLED_OnTime = 50; monLED_OffTime = 100; monLED_FlashPulse = 1; monLED_Gap = 500; 
 		if (tSwitchValue[MAX_tSwitch-1]) Serial.println("@@@@@@ Lost connection @@@@@@"); //Debug on
-		//debugCycleTime = 3000;
 	}
 	// No input for over 10secs  (some frames seen)
 	if (mon2 && monLED_CyleCount > 50 && (monTimeElapse) > 10000) { // 50 frames + 10secs
@@ -947,6 +966,9 @@ void loop() {
 	
 	if (millis() - debugCyleStart > debugCycleTime) {		//loop for serial input and debug output
 		debugCyleStart = millis();
+		
+// Put debug like:	Serial.print(" -- 8indL: ");	here.
+
 		if (Serial.available() > 0) {		// Set debug on or off from TTY connection
 			String monSerialRead = Serial.readString();
 			if (monSerialRead == "Debug1\n" || monSerialRead == "d1\n" || monSerialRead == "d1") {
@@ -958,16 +980,12 @@ void loop() {
 			} else if (monSerialRead == "Debug\n" || monSerialRead == "d3\n" || monSerialRead == "Debug3\n" || monSerialRead == "d3") {
 				Serial.println("Debug is now turned on - Level 3");
 				tSwitchValue[MAX_tSwitch-1] = 3;
-
 			} else if (monSerialRead == "tt\n") {
 				Serial.println("Trailer Brake ON.");
 				setTrailerBrake(true);
 			} else if (monSerialRead == "t\n") {
 				Serial.println("Trailer Brake OFF.");
 				setTrailerBrake(false);
-				
-				
-				
 			} else {
 					Serial.println("Debug is now turned off.  [reminder: Debugx]");
 					tSwitchValue[MAX_tSwitch-1] = 0;
@@ -1001,10 +1019,7 @@ void loop() {
 					digitalWrite(9, LOW);	// Indicator Lights
 					digitalWrite(7, LOW);	// Front Runnin Lights
 					delay(200);
-				}
-				
-
-				
+				}			
 			}
 			if (tSwitchValue[MAX_tSwitch-1] >= 1) {
 				Serial.print("Legs position value: "); 
