@@ -336,10 +336,6 @@ ISR(TIMER2_COMPA_vect){
 void setup() {
 	Serial.begin(115200);
 	if (tSwitchValue[MAX_tSwitch-1]) Serial.println("\n--- System Starting ---");
-	pinMode(inputPin, PPM_INPUT_TYPE);  
-//	enableInterrupt(inputPin, interruptReadChannels, PULSE_EDGE);
-	attachInterrupt(digitalPinToInterrupt(inputPin), interruptReadChannels, PULSE_EDGE);
-
 	pinMode(monLED_PIN, OUTPUT);
 	channelTime[0] = -1;		// just something that will be noted if seen
 	for (int i = 1; i <= maxChannels; i++){
@@ -360,32 +356,47 @@ void setup() {
 	pinMode(runningLightsPin2, OUTPUT);
 	pinMode(runningLightsPin3, OUTPUT);
 	
-	//setTrailerBrake(false);			// set trailer brake off in case - no idea of state of trailer at switch on.
-	//if (tSwitchValue[MAX_tSwitch-1]) Serial.println("##### Trailer Brake Off at start-up"); //Debug 
-	setTrailerBrake(true);			// set trailer brake on.
-	if (tSwitchValue[MAX_tSwitch-1]) Serial.println("##### Trailer Brake On at start-up"); //Debug 
-	
-	bitWrite(TIMSK2, OCIE2A, 0); // disable interrupt 
-	//set timer2 interrupt
+	bitWrite(TIMSK2, OCIE2A, 0); // disable interrupt
+	// -- set timer2 interrupt  for interrupt timer - too low and the system locks up so min 40?
+	//  timerPrecission is effectively the number of micro seconds between interupts 
+	//	- too quick and processing doesn't finish!!  but the smaller the better for proportional accuracy.
 	TCCR2A = 0;	// set entire TCCR2A register to 0
 	TCCR2B = 0;	// same for TCCR2B
 	TCNT2  = 0;	//initialize counter value to 0
 		// set compare match register
 		//  OCR2A = 200;  // (must be <256)
-	OCR2A = 2*timerPrecission;	// 200   (must be <256)
+	OCR2A = 2*timerPrecission;	//  2 * 40   (must be <256)
 	TCCR2A |= (1 << WGM21);	// turn on CTC mode
 	TCCR2B |= (1 << CS21);    // Set CS21 bit for 8 prescaler;  22 for 64
 //	TIMSK2 |= (1 << OCIE2A);	// enable timer compare interrupt
+//	Don't enable here so timer doesn't start before first frame available
 		//	TIMSK2 &= ~(1 << OCIE2A);	// disable interrupt
 		// bitWrite(TIMSK2, OCIE2A, 0); // disable interrupt 
 		// bitWrite(TIMSK2, OCIE2A, 1); // enable interrupt 	
 			//byte timmer2Save = TIMSK2;	// save interrupt byte (current situation)
 			//TIMSK2 &= ~(1 << OCIE2A);		// disable interrupt
 			//TIMSK2 = timmer2Save;			// restore interrupt byte (old situation)
-//	Don't enable here so timer doesn't start before first frame available
 
 //	ADMUX = _BV(REFS0) | _BV(MUX3) | _BV(MUX2) | _BV(MUX1);   // setup ADMUX for reading supply power value
-		
+
+	// Initialise legs so ESC gets a good centre position (else strange things can happen at hookup)
+	int pulseTime = 1500;	// 1.5 millisecond pulses - i.e. mid position
+	int pulseCount = 10; 	// 4+?? pulses needed for ESC centre initialisation
+	for (int i=1; i <= pulseCount; i++) {
+		digitalWrite(channelPIN[1], HIGH); 	// set channel 1 (legs) high
+		delayMicroseconds(pulseTime);		//	for xx time
+		digitalWrite(channelPIN[1], LOW);	// set channel 1 (legs) low
+		delay(18);							// wait for inter pulse gap
+	}
+	
+	// Initialise PPM input interrupt system
+	pinMode(inputPin, PPM_INPUT_TYPE);  
+	attachInterrupt(digitalPinToInterrupt(inputPin), interruptReadChannels, PULSE_EDGE);
+
+	// Set trailer brake on.
+	setTrailerBrake(true);			
+	if (tSwitchValue[MAX_tSwitch-1]) Serial.println("##### Trailer Brake On at start-up"); //Debug 
+	
 } // end setup  
 
 // -------------------------------
