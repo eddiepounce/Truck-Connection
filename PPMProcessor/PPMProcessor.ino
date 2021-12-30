@@ -381,7 +381,7 @@ void setup() {
 
 	// Initialise legs so ESC gets a good centre position (else strange things can happen at hookup)
 	int pulseTime = 1500;	// 1.5 millisecond pulses - i.e. mid position
-	int pulseCount = 10; 	// 4+?? pulses needed for ESC centre initialisation
+	int pulseCount = 30; 	// 20+ pulses needed for ESC centre initialisation
 	for (int i=1; i <= pulseCount; i++) {
 		digitalWrite(channelPIN[1], HIGH); 	// set channel 1 (legs) high
 		delayMicroseconds(pulseTime);		//	for xx time
