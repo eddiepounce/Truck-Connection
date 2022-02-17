@@ -110,7 +110,7 @@ const int channelDirectionPIN[MAX_CHANNELS+1] = {0,0,0,9,8,11,0,0,0};	// directi
 const int channelTimeLimit[MAX_CHANNELS+1] = {0,3500,0,0,0,0,0,0,0};		//millis (1000 = 1 second)
 //const int channelTimeLimit[MAX_CHANNELS+1] = {0,0,0,0,0,0,0,0,0};
 //		How long channel can stay not centered	   1 2 3 4 5 6 7 8 //channel
-const int channelRateLimit[MAX_CHANNELS+1] = {0,150,500,500,500,500,500,500,500};	//0-500 for proportional
+const int channelRateLimit[MAX_CHANNELS+1] = {0,300,500,500,500,500,500,500,500};	//0-500 for proportional
 //			Max speed/rate for prop channels	  1   2   3   4   5   6   7   8 //channel
 //			250 = half speed max  (channel time goes 1 - 1.5 - 2 msecs; hence the 500)
 //			(used to slow down trailer leg up/down)
@@ -379,6 +379,7 @@ void setup() {
 
 //	ADMUX = _BV(REFS0) | _BV(MUX3) | _BV(MUX2) | _BV(MUX1);   // setup ADMUX for reading supply power value
 
+/* -- Not needed with cheaper ESC --
 	// Initialise legs so ESC gets a good centre position (else strange things can happen at hookup)
 	int pulseTime = 1500;	// 1.5 millisecond pulses - i.e. mid position
 	int pulseCount = 30; 	// 20+ pulses needed for ESC centre initialisation
@@ -388,6 +389,7 @@ void setup() {
 		digitalWrite(channelPIN[1], LOW);	// set channel 1 (legs) low
 		delay(18);							// wait for inter pulse gap
 	}
+*/
 	
 	// Initialise PPM input interrupt system
 	pinMode(inputPin, PPM_INPUT_TYPE);  
@@ -412,6 +414,9 @@ void loop() {
 		frameAvailable = false;		
 //		delayMicroseconds(channelDelayTimer);		//------ to spread out starts ---------------------------
 		outChannel = 1; 
+		// Adjust legs value so that it doesn't wine when legs not in use.
+		channelTime[1] = channelTime[1]-40;
+		//
 		channelTimeCopy[0] = channelTime[0];
 		statusChannelTimeCopy[0] = channelTimeCopy[0];
 		if (trailerBrakeOn && millis() - trailerBrakeTimeOn > trailerBrakeOnDelay) {	
