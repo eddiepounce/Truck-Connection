@@ -113,7 +113,8 @@ const int throttleForwardValue = 450;		// if less - set motion to Forward
 volatile static unsigned long throttlePinTime = 0;
 //		used to store a time (micros) during input for pin change interrupt
 static int throttleValue = 500;				// initial value - mid point
-//bool inReverse = false;						// current motion - Forward/Reverse
+bool braked = false;			// have we braked after going forward?
+bool reversing = false;			// are we now reversing?
 const int ctrlCabLighting = 9;					// turns cab lighting on/off
 
 // --------------------------------
@@ -265,19 +266,33 @@ void loop() {
 	// =========== Output Video Camera Control - Front/Rear =============
 	// cameraControlPin - controlled by monitoring Throttle
 		if (throttleValue > throttleReverseValue) {
-			digitalWrite(cameraControlPin, HIGH);	// rear camera
-			digitalWrite(ctrlCabLighting, LOW);			// moving so cab light off
-			digitalWrite(cameraPowerPin, HIGH);			// and cameras on
-			if (debugMode) {
-				Serial.print(" Reversing. Throttle value: ");
-				Serial.println(throttleValue);
+			if (reversing) {
+				digitalWrite(cameraControlPin, HIGH);	// rear camera
+				digitalWrite(ctrlCabLighting, LOW);			// moving so cab light off
+				digitalWrite(cameraPowerPin, HIGH);			// and cameras on
+				if (debugMode) {
+					Serial.print(" Reversing. Throttle value: ");
+					Serial.println(throttleValue);
+				}
+			} else {
+				braked = true;			// means camera dosn't change if just braking.
 			}
+		}
+		if (throttleValue < throttleReverseValue and braked == true) {
+			reversing = true;
 		}
 		if (throttleValue < throttleForwardValue) {
 			digitalWrite(cameraControlPin, LOW);	// front camera
 			digitalWrite(ctrlCabLighting, LOW);			// moving so cab light off
 			digitalWrite(cameraPowerPin, HIGH);			// and cameras on
+			braked = false;
+			reversing = false;
 		}
+		if (debugMode) {
+			Serial.print(" Braked: ");
+			Serial.println(braked);
+		}
+
 	// turn cameras off if stationary for xxx time
 		//digitalWrite(cameraPowerPin, LOW);
 	
