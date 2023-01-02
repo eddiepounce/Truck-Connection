@@ -3,6 +3,9 @@ Input is PPM - usually from IR Receiver at Trailer 5th Wheel King Pin.
 Outputs individual channels on a pin.
 Copyright (C) 2021  Eddie Pounce
 
+Read pulse stream created by tractor unit:
+	- 500us pulses with time between rising edges = RC PWM time (1-2ms).
+
 
 NOTE: ----- The Nano only has PWM on Pins  3,5,6,9,10,11. -------- 
 					(not 13 !!!)
@@ -14,7 +17,7 @@ Still To Do:
 
 ==============================================================
 
-Lorry Trailer (EDP1)
+Lorry Trailer (EDP1) - 40ft Flat
 
 Channel		Function				Pin		Info								Implementation
 -------		--------				---		----								--------------
@@ -83,7 +86,7 @@ const int maxChannels		= 6;	// channels to process - can be less but not more th
 //  This controls the timing of the interrupt timer - too low and the system locks up so min 40?
 //  It is effectively the number of micro seconds between interupts - too quick and all time is in here!!
 const int timerPrecission = 40;
-const int minProportionalValue = 700;	
+const int minProportionalValue = 700;	// = .7ms - shortest pulse = 1ms
 						//debounce for input and means proportional channel for toggleSwitch channels
 //const int channelDelayTimer = 50;	// to separate the outputs from input frame and each other
 
@@ -120,8 +123,8 @@ const int channelSpecialType[MAX_CHANNELS+1] = {0,0,1,2,3,0,0,0,0};  //type
 //				l - 1 = Turn running lights on when rear lights are on (but nor for brake lights!)
 //				S - 2 = Flash rear running lights with indicator.
 //				S - 3 = Flash rear running lights with indicator.
+
 // ------- Running Lights ------------------
-bool legsDirectionUp;
 const int runningLightsPin1 = 7;		// front running lights - pin# (2 front side & front white marker lights)
 const int runningLightsPin2 = 4;		// Rear Right Side Running Lights - pin#
 const int runningLightsPin3 = 5;		// Rear Left Side Running Lights - pin#
@@ -133,13 +136,14 @@ unsigned long runningLightsFlashStart = 0;			// time previous sequence finished
 unsigned long turnLeftStart = 0;
 unsigned long turnRightStart = 0;
 
-// -------- Legs Sensor -------------------
+// -------- Legs -------------------
+const int trailerLegsChannel = 1;
+bool legsDirectionUp;
 const int legsSensorPin = A1;
 const int legsSensorDownValue = 860;
 
 // ------- Trailer Brake ------------------
 const int trailerBrakePin = A5;
-const int trailerLegsChannel = 1;
 static bool trailerBrakeOn = false;		// don't actually know but startup sets it so needs to be opposite here.
 unsigned long trailerBrakeTimeOn;
 const int trailerBrakeOnDelay = 2000;	// delay before brake is automatically tuned off
@@ -227,7 +231,7 @@ int monLED_FlashPulse = 1;
 int monLED_FlashPulseCount = 0;
 unsigned long monTimeOfLastCycle = 0;	// i.e last output cycle started
 unsigned long monTimeElapse = 0;		// working value to save calls to millis
-int monLED_CyleCount = 0;
+int monLED_CycleCount = 0;
 bool mon0 = true; bool mon1 = false;			// so that failure messages only appear once in output.
 bool mon2 = false; bool mon3 = false; bool mon4 = false;
 //int monPowerMin = 4950;		// minimum value of Power monitor before ..... (5120 with Diode via Vin; 4918 via USB)
@@ -267,9 +271,10 @@ void(* resetSketch) (void) = 0;
 
 
 void interruptReadChannels() {
+	//500us pulses with time between rising edges = RC PWM time (1-2ms).
 	nowTime = micros();			// get current time - microseconds
-	diffTime = nowTime - oldTime;	// calculate pulse length (time since last rising edge!)
-	if (diffTime > minProportionalValue) {		// sort of debounce
+	diffTime = nowTime - oldTime;	// calculate RC PWM pulse length (time since last rising edge!)
+	if (diffTime > minProportionalValue) {		// sort of debounce - if pulse shorter than 0.7ms it cannot have finished.
 		oldTime = nowTime;
 		channelIn++;
 		if (diffTime >= LONGEST_WAIT_FOR_CHANNEL) {		// check for frame finishing - actually start of next frame!!!!
@@ -282,11 +287,9 @@ void interruptReadChannels() {
 	//	if (channelIn > MAX_CHANNELS) {		// check for long frame 
 	//		longFrameCount++;
 	//	} else {
-			channelTime[channelIn] = diffTime;		// capture pulse length
+			channelTime[channelIn] = diffTime;		// capture RC PWM pulse length
 	//	}
-		// may be - if (channelIn == maxChannels) {	// i.e. can we start after the 6 channels we are using are here.
-		//										// is this needed? =======
-		if (channelIn == MAX_CHANNELS) {
+		if (channelIn == maxChannels) {		// we can start after the 6 channels we are using are here.
 			frameAvailable = true;
 		}
 	}
@@ -298,11 +301,11 @@ static volatile int outputIntDiff;
 //for interrupt Timer (for output)
 //--------------------------------
 ISR(TIMER2_COMPA_vect){ 
-	//interrupt every 50? micro seconds - controlled by constant timerPrecission
+	//interrupt every 40? micro seconds - controlled by constant timerPrecission
 	timerTime = timerTime + timerPrecission;	
-	// ------------------------------------------------------
-	// ======== finish processing for all channels ==========
-	// ------------------------------------------------------
+	// -------------------------------------------------------------------
+	// ======== finish processing for all channels still active ==========
+	// -------------------------------------------------------------------
 	for (int i = 1; i <= maxChannels; i++) {
 		if (!(channelTimeCopy[i] < 0)) {							// channel still active
 			outputIntDiff = timerTime - channelOutTimeStart[i];
@@ -414,8 +417,10 @@ void loop() {
 		frameAvailable = false;		
 //		delayMicroseconds(channelDelayTimer);		//------ to spread out starts ---------------------------
 		outChannel = 1; 
+//
 		// Adjust legs value so that it doesn't wine when legs not in use.
-		channelTime[1] = channelTime[1]-40;
+		//channelTime[1] = channelTime[1]-40;
+		channelTime[1] = channelTime[1]-60;		// 2 Jan 2023
 		//
 		channelTimeCopy[0] = channelTime[0];
 		statusChannelTimeCopy[0] = channelTimeCopy[0];
@@ -426,13 +431,13 @@ void loop() {
 		}			
 		timerTime = 0;					// reset the time being used in the timer interrupt for next frame.
 		//--Monitoring--
-		monLED_CyleCount++;
+		monLED_CycleCount++;
 		monTimeOfLastCycle = millis();
 		mon1=true; mon2=true; mon3=true; mon4=true;
 		//--Monitoring--end
 		debugCycleTime = 1000;  // reset debugCycleTime to 1 second 
 								// (set very slow if connection lost (no frames seen)
-		bitWrite(TIMSK2, OCIE2A, 1); 	// enable timer interrupt  (disabled for startup)
+		bitWrite(TIMSK2, OCIE2A, 1); 	// enable output timer interrupt  (disabled for startup)
 	}
 	monTimeElapse = millis() - monTimeOfLastCycle;  
 
@@ -448,7 +453,7 @@ void loop() {
 					channelTimeCopy[outChannel] = ((-(channelTimeCopy[outChannel] - PULSE_LENGTH_MID))+PULSE_LENGTH_MID); 
 /*
 		// learn centre point of TX / RX for 4 stick channels.
-		if (outChannel <= 4 && monLED_CyleCount > 10 && monLED_CyleCount < 60) {		// first 50 frames (1 second)
+		if (outChannel <= 4 && monLED_CycleCount > 10 && monLED_CycleCount < 60) {		// first 50 frames (1 second)
 			PULSE_LENGTH_MID_temp[outChannel] = (PULSE_LENGTH_MID_temp[outChannel] + channelTimeCopy[outChannel]) / 2;
 			//Serial.print("-- Channel: ");
 			//Serial.print(outChannel);
@@ -460,10 +465,10 @@ void loop() {
 		// Process channel
 		switch (channelType[outChannel]) {
 		// 		set 'output high' on each proportional channel  and set others appropriately
-		//			timing and 'output low' (end of PWM pulse) is done in timmer interrupt
+		//			timing and 'output low' (end of PWM pulse) is done in timer interrupt
 		//  P and S  require a pulse of the correct length output on the pin (proportional channel)
-		//  L requires the output to be set for LED brightnes by PWM (not a proportional channel)
-		//  l (lowerCaseL) outputs LED brightnes by PWM but using 1/2 input x 2 i.e. whole swing 
+		//  L requires the output to be set for LED brightness by PWM (not a proportional channel)
+		//  l (lowerCaseL) outputs LED brightness by PWM but using 1/2 input x 2 i.e. whole swing 
 		//																	(direction pin available if needed)
 		//  T  ToggleSwitch - needs a short or long pulse 	UP for control of switch number
 		//													DOWN for on/off control of the switch
@@ -496,7 +501,7 @@ void loop() {
 					channelTimeCopy[outChannel] = PULSE_LENGTH_MID - channelRateLimit[outChannel];    // limit rate
 				}
 				analogWrite(channelPIN[outChannel], (long(abs(channelTimeCopy[outChannel]-PULSE_LENGTH_MID)) * 255/500));
-				// convert from midpoint to PWN for LED =  1 to 255
+				// convert from midpoint to PWM for LED =  1 to 255
 			}
 			statusChannelTimeCopy[outChannel] = channelTimeCopy[outChannel]; // copy data for debug/status output
 			channelTimeCopy[outChannel] = -'L';			// channel dealt with set negative
@@ -573,7 +578,7 @@ void loop() {
 			} else {
 				digitalWrite(channelDirectionPIN[outChannel], LOW);// direction off
 			}
-			if (channelTimeCopy[outChannel] > PULSE_LENGTH_MID + 100) {
+			if (outChannel == trailerLegsChannel && channelTimeCopy[outChannel] > PULSE_LENGTH_MID + 100) {
 				legsDirectionUp = true;
 			} else {
 				legsDirectionUp = false;
@@ -875,7 +880,7 @@ void loop() {
 	// ----------------------------------------------------------------------
 
 	// No input for 0.5	sec (some frames seen)
-	if (mon0 && monLED_CyleCount > 50 && (monTimeElapse) > 500) {  // 50 frames seen + 0.5 sec 
+	if (mon0 && monLED_CycleCount > 50 && (monTimeElapse) > 500) {  // 50 frames seen + 0.5 sec 
 		mon0 = false; mon1=true;
 		// lost input signal - apply trailer brakes
 		if (setTrailerBrake(true) && tSwitchValue[MAX_tSwitch-1]) 
@@ -883,26 +888,26 @@ void loop() {
 //		}
 	}
 	// No input for 1 sec (some frames seen)
-	if (mon1 && monLED_CyleCount > 50 && (monTimeElapse) > 1000) {  // 50 frames + 1 sec 
+	if (mon1 && monLED_CycleCount > 50 && (monTimeElapse) > 1000) {  // 50 frames + 1 sec 
 		mon1 = false; mon2=true; 
 		// lost input signal - singal pulse
 		monLED_OnTime = 50; monLED_OffTime = 100; monLED_FlashPulse = 1; monLED_Gap = 500; 
 		if (tSwitchValue[MAX_tSwitch-1]) Serial.println("@@@@@@ Lost connection @@@@@@"); //Debug on
 	}
 	// No input for over 10secs  (some frames seen)
-	if (mon2 && monLED_CyleCount > 50 && (monTimeElapse) > 10000) { // 50 frames + 10secs
+	if (mon2 && monLED_CycleCount > 50 && (monTimeElapse) > 10000) { // 50 frames + 10secs
 		mon2 = false; mon3=true; 
 		//double pulse
 		monLED_OnTime = 50; monLED_OffTime = 100; monLED_FlashPulse = 2; monLED_Gap = 500; 
 		if (tSwitchValue[MAX_tSwitch-1]) Serial.println("@@@@@@ Lost connection for 10 seconds @@@@@@"); //Debug on
 	}
 	// No input for over 5 mins  (some frames seen)
-	if (mon3 && monLED_CyleCount > 50 && (monTimeElapse) > 300000) { // 5 mins
+	if (mon3 && monLED_CycleCount > 50 && (monTimeElapse) > 300000) { // 5 mins
 		mon3 = false;  mon4=true; 
 		//back to fast blinking
 		monLED_OnTime = 10; monLED_OffTime = 100; monLED_FlashPulse = 1; monLED_Gap = 100; 
 		//reset count of frames seen
-		monLED_CyleCount=0;
+		monLED_CycleCount=0;
 		if (tSwitchValue[MAX_tSwitch-1]) Serial.println("@@@@@@ Lost connection for 5 minutes @@@@@@"); //Debug on
 	}
 	// No input for over 10 mins
@@ -965,7 +970,7 @@ void loop() {
 				tSwitchLED_FlashTimeStart = 0;							//reset flash
 			}
 		}
-		if (monLED_CyleCount > 50 && monTimeElapse < 500) {	// recently had a frame - 0.5 secs
+		if (monLED_CycleCount > 50 && monTimeElapse < 500) {	// recently had a frame - 0.5 secs
 			monLED_OnTime = 50; monLED_OffTime = 500; 
 			monLED_FlashPulse = 1;  // use basic OK flash.
 			monLED_Gap = 1500; 
@@ -973,7 +978,7 @@ void loop() {
 	} else {
 		digitalWrite(tSwitchPIN[MAX_tSwitch], LOW);
 		// set different build in LED flash
-		if (monLED_CyleCount > 50 && monTimeElapse < 500) {	// recently had a frame - 0.5 secs
+		if (monLED_CycleCount > 50 && monTimeElapse < 500) {	// recently had a frame - 0.5 secs
 			monLED_OnTime = 50; monLED_OffTime = 400; 
 			monLED_FlashPulse = tSwitchNo;  
 			monLED_Gap = 1500;
@@ -1054,7 +1059,7 @@ void loop() {
 		// -- Output Debug info if required --
 		if (tSwitchValue[MAX_tSwitch-1] >= 3 && monTimeElapse < 4000) {  // Debug ON
 			Serial.print("Frames: ");				 // print the status of the channels & switches if Sw6 on
-			Serial.print(monLED_CyleCount);	
+			Serial.print(monLED_CycleCount);	
 			for ( int i = 0; i <= maxChannels; i++ ){
 				Serial.print("\tCh");
 				Serial.print(i);
@@ -1064,7 +1069,7 @@ void loop() {
 			}
 			Serial.println("");
 			Serial.print("FrDiff: ");				 // print the status of the channels & switches if Sw6 on
-			Serial.print(monLED_CyleCount);	
+			Serial.print(monLED_CycleCount);	
 			for ( int i = 0; i <= maxChannels; i++ ){
 				Serial.print("\tCh");
 				Serial.print(i);

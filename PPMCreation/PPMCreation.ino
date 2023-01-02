@@ -2,6 +2,8 @@
 Make a PPM stream from PWM's and Lighting connections on RC Controlled truck.
 Copyright (C) 2021  Eddie Pounce
 
+Create pulse stream - 500us pulses with time between rising edges = RC PWM time (1-2ms).
+
 	Channel
 		1		Proportional	5th Wheel Lock Servo - to drive trailer legs (PWM input from MFU)
 		2		Analogue		Rear/Stop Lights (uses trailer connector on MFU)
@@ -15,17 +17,18 @@ Copyright (C) 2021  Eddie Pounce
 	=============== MPU - mini processor unit - Arduino Nano ===================
 	Gnd	Black			# IR Emitter
 	D2			Ch1		Copy of 5th Wheel Lock Servo - to drive trailer legs (PWM input)
-	D3			Ch6		3 way switch - to control Toggle Switch settings on Trailer
+	D3	Green	Ch6		Rx5 - 3 way switch - to control Toggle Switch settings on Trailer  (10k resistor)
 												(PWM input from receiver)
 	D4			Ch3		Indicator (uses trailer connector on MFU)
 	D5			Ch4		Indicator (uses trailer connector on MFU)
 	D6	Red		Ch5		Reversing Lighting (via Opto Isolator in LED circuit)
+	D7	Green			Camera Control - Selects forward or reverse camera				#########  Moved from A0
 	D8	Yellow			Throttle monitoring (PWM input)
 	D9	Purple	PWM 	Cab Lighting	
-	D10		PWM Unused
-	D11		PWM Unused
+	D10	Light Grey		PWM Unused  (28awg ribbon #1)
+	D11	Dark Purple		PWM Unused 	(28awg ribbon #1)
 	D12	White			# IR Emitter
-	A0	Green			Camera Control - Selects forward or reverse camera
+	A0	White (10k resistor)	From Rx6 - 3 pos switch.  (28awg ribbon #1)
 	A1	Black			RightIndRepeater control
 	A2	Red				LeftIndRepeater control
 	A3	Yellow	Ch2		Rear/Stop Lights (uses trailer connector on MFU) 
@@ -81,7 +84,7 @@ int debugMode = false;
 //		1=legs, 2=rear/stop 3=ind, 4=ind, 5=reversing, 6=TSwitch
 //		Throttle monitor.
 				
-const char channelType[] =   {"-PASSSPSS"};  
+const char channelType[] =   {"-PASSSPPS"};  
 //								12345678	// channel
 //				P = Proportional (PWM) input
 //				A = Analogue input to create 3 state channel (rear/stop lights)
@@ -89,9 +92,8 @@ const char channelType[] =   {"-PASSSPSS"};
 //				S = Switch input - light on or off
 //				T = Testing (analogue) - put input value in output array
 
-//const int channelPIN[maxChannels+1] = {0,2,A3,4,5,A2,3,0,0};		// channel input pin
-const int channelPIN[maxChannels+1] = {0,2,A3,4,5,6,3,0,0};		// channel input pin
-//										 1  2 3 4 5 6 7 8  // channel
+const int channelPIN[maxChannels+1] = {0,2,A3,4,5,6,3,A0,0};		// channel input pin
+//										 1  2 3 4 5 6  7 8  // channel
 volatile static int	frameData[maxChannels+1] = {0,0,0,0,0,0,0,498,499};
 //		0 - 1000 microS							  1 2 3 4 5 6 7 8  //channel
 //volatile static unsigned long propInputTime[maxChannels+1] = {0,0,0,0,0,0,0,0,0};
@@ -105,8 +107,8 @@ const int ctrlLeftIndRepeater = A2;
 const int ctrlSideLights = A4;
 
 // Video Camera Control / Trottle monitoring
-const int cameraControlPin = A0;			// Selects forward or reverse camera
-const int cameraPowerPin = A5;				// Power for cameras
+const int cameraControlPin = 7;			// Selects forward or reverse camera
+const int cameraPowerPin = A5;				// Power control for cameras
 const int throttlePin = 8;					// Throttle monitoring pin
 const int throttleReverseValue = 600;		// if more - set motion to Reverse
 const int throttleForwardValue = 450;		// if less - set motion to Forward
@@ -116,6 +118,9 @@ static int throttleValue = 500;				// initial value - mid point
 bool braked = false;			// have we braked after going forward?
 bool reversing = false;			// are we now reversing?
 const int ctrlCabLighting = 9;					// turns cab lighting on/off
+
+volatile static unsigned long switchPinTime = 0;
+
 
 // --------------------------------
 // Proportional settings
@@ -175,6 +180,15 @@ ISR (PCINT0_vect) {
 		throttleValue = micros() - throttlePinTime - 1000;	// 
 	}
 } 
+ISR (PCINT1_vect) {
+    // For PCINT of pins A0 to A5
+	// Only 1 pin used in port
+	if(digitalRead(channelPIN[7])) {
+		switchPinTime = micros();		
+	} else {
+		frameData[7] = micros() - switchPinTime - 1000;	// 
+	}
+} 
 // -------------------------------
 //		Setup
 //--------------------------------
@@ -199,6 +213,11 @@ void setup() {
 	pciSetup(throttlePin);
 		//PCICR  |= B00000001;			//"PCIE0" enabeled (PCINT0 to PCINT7)
 		//PCMSK0 |= B00000001;			//"PCINT0" enabeled -> D8 will trigger interrupt
+	// setup for switch on Rx6
+	//pinMode(channelPIN[7], INPUT); - done in loop
+		// enable interrupt for pin...  -- Pin Change Interrupt (PCI)
+	pciSetup(channelPIN[7]);
+	
 	// Cab lighting control pin
 	pinMode(ctrlCabLighting, OUTPUT);
 	digitalWrite(ctrlCabLighting, HIGH);		// cab lights on
