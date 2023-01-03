@@ -110,10 +110,10 @@ const int channelPIN[MAX_CHANNELS+1] = {0,A4,6,0,0,0,0,0,0};	// channel pin
 //		Proportional output - PWM		   1 2 3 4 5 6  7  8 //channel
 const int channelDirectionPIN[MAX_CHANNELS+1] = {0,0,0,9,8,11,0,0,0};	// direction of channel pin 
 //		Used for lights - turn PWM into on/off	   1 2 3 4  5 6 7 8	//channel
-const int channelTimeLimit[MAX_CHANNELS+1] = {0,3500,0,0,0,0,0,0,0};		//millis (1000 = 1 second)
+const int channelTimeLimit[MAX_CHANNELS+1] = {0,4500,0,0,0,0,0,0,0};		//millis (1000 = 1 second)
 //const int channelTimeLimit[MAX_CHANNELS+1] = {0,0,0,0,0,0,0,0,0};
 //		How long channel can stay not centered	   1 2 3 4 5 6 7 8 //channel
-const int channelRateLimit[MAX_CHANNELS+1] = {0,300,500,500,500,500,500,500,500};	//0-500 for proportional
+const int channelRateLimit[MAX_CHANNELS+1] = {0,200,500,500,500,500,500,500,500};	//0-500 for proportional
 //			Max speed/rate for prop channels	  1   2   3   4   5   6   7   8 //channel
 //			250 = half speed max  (channel time goes 1 - 1.5 - 2 msecs; hence the 500)
 //			(used to slow down trailer leg up/down)
@@ -586,7 +586,17 @@ void loop() {
 			if (channelPIN[outChannel] > 0) {
 				if (outChannel == trailerLegsChannel && legsDirectionUp) {			// if legs going up set brakes OFF
 					if (setTrailerBrake(false) && tSwitchValue[MAX_tSwitch-1]) 
-													Serial.println("##### Trailer Brake Off when Legs going up"); //Debug on
+											Serial.println("##### Trailer Brake Off when Legs going up"); //Debug on
+				}
+				// Check for legs fully down - if so stop - using Linear Hall Effect Sensor
+				if (outChannel == trailerLegsChannel && !legsDirectionUp) {		// legs going down
+					channelTimeLimitStart[outChannel] = millis();  // re-init the start time so time limit not used on down
+					//Serial.println(analogRead(legsSensorPin)); 
+					if (analogRead(legsSensorPin) > legsSensorDownValue) {		// legs fully down
+						channelTimeCopy[outChannel] = PULSE_LENGTH_MID;			// force stick position to centre (off)
+						if (setTrailerBrake(true) && tSwitchValue[MAX_tSwitch-1])	// set brakes ON
+												Serial.println("##### Trailer Brake On when Legs Down"); //if Debug on
+					}
 				}
 				//--check for time limit
 				if (channelTimeLimit[outChannel] > 0) {		//is there a limit
@@ -603,23 +613,16 @@ void loop() {
 						}
 					}
 				}
-				// Check for legs fully down - if so stop - using Linear Hall Effect Sensor
-				if (outChannel == trailerLegsChannel && !legsDirectionUp) {		// legs going down
-					//Serial.println(analogRead(legsSensorPin)); 
-					if (analogRead(legsSensorPin) > legsSensorDownValue) {		// legs fully down
-						channelTimeCopy[outChannel] = PULSE_LENGTH_MID;			// force stick position to centre (off)
-						if (setTrailerBrake(true) && tSwitchValue[MAX_tSwitch-1])	// set brakes ON
-												Serial.println("##### Trailer Brake On when Legs Down"); //if Debug on
-					}
-				}
 
 				//--check for rate limit
 				if (channelTimeCopy[outChannel] > PULSE_LENGTH_MID + channelRateLimit[outChannel]) {
 					channelTimeCopy[outChannel] = PULSE_LENGTH_MID + channelRateLimit[outChannel];    // limit rate
+					if (outChannel == trailerLegsChannel) channelTimeCopy[outChannel] -= 50;		// legs need slower rate up!
 				}
 				if (channelTimeCopy[outChannel] < PULSE_LENGTH_MID - channelRateLimit[outChannel]) {
 					channelTimeCopy[outChannel] = PULSE_LENGTH_MID - channelRateLimit[outChannel];    // limit rate
 				}
+
 				channelOutTimeStart[outChannel] = timerTime;
 				digitalWrite(channelPIN[outChannel], HIGH);  //(proportional output (i.e. time based))
 				statusChannelTimeCopy[outChannel] = channelTimeCopy[outChannel]; // copy data for debug/status output
