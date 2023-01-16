@@ -10,8 +10,10 @@ Create pulse stream - 500us pulses with time between rising edges = RC PWM time 
 		3		On/Off			Indicator	 (uses trailer connector on MFU)
 		4		On/Off			Indicator	 (uses trailer connector on MFU)
 		5		On/Off			Reversing Lighting (via Opto Isolator in LED circuit)
-		6		Proportional	3 way switch - to control Toggle Switch settings on Trailer
+		6		Proportional	3 way switch (centreSprung) - to control Toggle Switch settings on Trailer
 												(PWM input from receiver)
+		7		Proportional	3 way switch (3pos) - to control Gearbox  (PWM input from receiver)
+												
 					MFU = Multi Function Unit - Motor, 5th Wheel Lock, Lights & Sound Controller
 
 	=============== MPU - mini processor unit - Arduino Nano ===================
@@ -25,10 +27,10 @@ Create pulse stream - 500us pulses with time between rising edges = RC PWM time 
 	D7	Green			Camera Control - Selects forward or reverse camera				#########  Moved from A0
 	D8	Yellow			Throttle monitoring (PWM input)
 	D9	Purple	PWM 	Cab Lighting	
-	D10	Light Grey		PWM Unused  (28awg ribbon #1)
-	D11	Dark Purple		PWM Unused 	(28awg ribbon #1)
+	D10	Light Grey		Gearbox Servo from MFU  (28awg ribbon #2)
+	D11	Dark Purple		Feed to Gearbox Servo	(28awg ribbon #3)
 	D12	White			# IR Emitter
-	A0	White (10k resistor)	From Rx6 - 3 pos switch.  (28awg ribbon #1)
+	A0	White (10k resistor)	From Rx6 - 3 pos switch.  (28awg ribbon #1)  [Frame position 7]
 	A1	Black			RightIndRepeater control
 	A2	Red				LeftIndRepeater control
 	A3	Yellow	Ch2		Rear/Stop Lights (uses trailer connector on MFU) 
@@ -112,24 +114,41 @@ const int cameraPowerPin = A5;				// Power control for cameras
 const int throttlePin = 8;					// Throttle monitoring pin
 const int throttleReverseValue = 600;		// if more - set motion to Reverse
 const int throttleForwardValue = 450;		// if less - set motion to Forward
-volatile static unsigned long throttlePinTime = 0;
+volatile static unsigned long throttleStartTime = 0;
 //		used to store a time (micros) during input for pin change interrupt
-static int throttleValue = 500;				// initial value - mid point
+volatile static int throttleValue = 500;	// initial value - mid point
+volatile static bool throttleState = LOW;
 bool braked = false;			// have we braked after going forward?
 bool reversing = false;			// are we now reversing?
-const int ctrlCabLighting = 9;					// turns cab lighting on/off
+const int ctrlCabLightingPin = 9;				// turns cab lighting on/off
+const int gearboxFromMFUPin = 10;				// PWM from MFU to feed to gearbox servo
+const int gearboxServoPin = 11;					// PWM to Gearbox Servo
+int gearboxGear = 2;
+int gearboxGearOld = 0;
+int gearboxPulseCount = 20;						// controls output to servo and number of pulses to send
+volatile static unsigned long gearboxStartTime = 0;
+//		used to store a time (micros) during input for pin change interrupt
+volatile static int gearboxFromMFUValue = 500;			// initial value - mid point
+volatile static bool gearboxFromMFUState = LOW;
 
-volatile static unsigned long switchPinTime = 0;
+volatile static unsigned long switchStartTime = 0;	// channelPIN[7] = A0
+//		used to store a time (micros) during input for pin change interrupt
+bool gearboxControlToggle = HIGH;
+unsigned long tSwitchDownTimerStart = 0;
+unsigned long tSwitchTimerNow = 0;
 
 
 // --------------------------------
 // Proportional settings
 // --------------------------------
 const int propMinSetting = 0;		// min, mid and max pulse lengths
+const int propOffSetting = 300;
 const int propMidSetting =500;		
+const int propOnSetting = 700;
 const int propMaxSetting = 1000;
 const int analogOffValue = 900;		// for Analogue input (inverted)
 const int analogOnValue = 350;		// for Analogue input (inverted)
+
 
 // -------------------------
 // for output of frames and debug info
@@ -164,31 +183,54 @@ void pciSetup(byte pin) {
     PCIFR  |= bit (digitalPinToPCICRbit(pin)); // clear any outstanding interrupt
     PCICR  |= bit (digitalPinToPCICRbit(pin)); // enable interrupt for the group
 }	
-	//Pin Change Interrupt Request 0 (pins D8 to D13) (PCINT0_vect)
-	//Pin Change Interrupt Request 1 (pins A0 to A5)  (PCINT1_vect)
-	//Pin Change Interrupt Request 2 (pins D0 to D7)  (PCINT2_vect)
-	//PCICR |= 0b00000001;    // turn on port b (PCINT0 – PCINT7)
-	//PCICR |= 0b00000010;    // turn on port c (PCINT8 – PCINT14)
-	//PCICR |= 0b00000100;    // turn on port d (PCINT16 – PCINT23)
+	//Pin Change Interrupt Request 0 (pins D8 to D13) port B (PCINT0_vect)
+	//Pin Change Interrupt Request 1 (pins A0 to A5) port C  (PCINT1_vect)
+	//Pin Change Interrupt Request 2 (pins D0 to D7) port D  (PCINT2_vect)
+	//PCICR |= 0b00000001;    // turn on port B (PCINT0 – PCINT7)
+	//PCICR |= 0b00000010;    // turn on port C (PCINT8 – PCINT14)
+	//PCICR |= 0b00000100;    // turn on port D (PCINT16 – PCINT23)
+
 
 ISR (PCINT0_vect) {
-    // For PCINT of pins D8 to D13
-	// Only 1 pin used in port
-	if(digitalRead(throttlePin)) {
-		throttlePinTime = micros();		
-	} else {
-		throttleValue = micros() - throttlePinTime - 1000;	// 
-	}
-} 
+    // For PCINT of pins D8 to D13 - Port B		(8 & 10 used)				//=======================================
+	//  if (PINB & B00000001)  Pin8		throttlePin
+	//  if (PINB & B00000100)  Pin10	gearboxFromMFUPin
+	
+	if(!throttleState) {				// current state low
+		if (PINB & B00000001) {			// Pin high & old state low - thats us
+			throttleState = HIGH;
+			throttleStartTime = micros();
+		}
+	} else {							// current state high
+		if (!(PINB & B00000001)) {		// Pin low & old state high - thats us
+			throttleState = LOW;
+			throttleValue = micros() - throttleStartTime - 1000;
+		}
+	} 
+	if(!gearboxFromMFUState) {			// current state low
+		if (PINB & B00000100) {			// Pin high & old state low - thats us
+			gearboxFromMFUState = HIGH;
+			gearboxStartTime = micros();		
+		}
+	} else {							// current state high
+		if (!(PINB & B00000100)) {		// Pin low & old state high - thats us
+			gearboxFromMFUState = LOW;
+			gearboxFromMFUValue = micros() - gearboxStartTime - 1000;
+		}
+	} 	
+}
+ 
 ISR (PCINT1_vect) {
-    // For PCINT of pins A0 to A5
+    // For PCINT of pins A0 to A5 - Port C		(A0 used)
 	// Only 1 pin used in port
-	if(digitalRead(channelPIN[7])) {
-		switchPinTime = micros();		
+//	if(digitalRead(channelPIN[7])) {
+	if(PINC & B00000001) {
+		switchStartTime = micros();		
 	} else {
-		frameData[7] = micros() - switchPinTime - 1000;	// 
+		frameData[7] = micros() - switchStartTime - 1000;	// 
 	}
 } 
+
 // -------------------------------
 //		Setup
 //--------------------------------
@@ -210,17 +252,20 @@ void setup() {
 	digitalWrite(cameraControlPin, LOW);	// default is front Camera
 	pinMode(throttlePin, INPUT);
 		// enable interrupt for pin...  -- Pin Change Interrupt (PCI)
-	pciSetup(throttlePin);
+	pciSetup(throttlePin);									// ##########################################
 		//PCICR  |= B00000001;			//"PCIE0" enabeled (PCINT0 to PCINT7)
 		//PCMSK0 |= B00000001;			//"PCINT0" enabeled -> D8 will trigger interrupt
 	// setup for switch on Rx6
 	//pinMode(channelPIN[7], INPUT); - done in loop
 		// enable interrupt for pin...  -- Pin Change Interrupt (PCI)
 	pciSetup(channelPIN[7]);
-	
+	// Gearbox Control
+	pciSetup(gearboxFromMFUPin);
+	pinMode(gearboxFromMFUPin, INPUT);
+	pinMode(gearboxServoPin, OUTPUT);
 	// Cab lighting control pin
-	pinMode(ctrlCabLighting, OUTPUT);
-	digitalWrite(ctrlCabLighting, HIGH);		// cab lights on
+	pinMode(ctrlCabLightingPin, OUTPUT);
+	digitalWrite(ctrlCabLightingPin, HIGH);		// cab lights on
 	// Marker Lights & Indicator Repeaters
 	pinMode(ctrlSideLights, OUTPUT);
 	digitalWrite(ctrlSideLights, LOW);
@@ -280,14 +325,61 @@ void loop() {
 		digitalWrite(outPin, LOW);
 		frameTime = nowTime;				// set frame output time
 		digitalWrite(LED_BUILTIN, LOW);		// turn off LED
-	// ======================================
 
-	// =========== Output Video Camera Control - Front/Rear =============
-	// cameraControlPin - controlled by monitoring Throttle
+		// =========== Gearbox Control =============	
+			// decide if stick or switch being used for Gearbox control
+			// channel 6 switch - hold down (high) for 3 seconds to toggle
+			// gearboxControlToggle = LOW == stick; HIGH == switch;
+		
+		tSwitchTimerNow = millis();
+		if (tSwitchDownTimerStart == 0 && frameData[6] <= propOffSetting) {		// start down timmer
+			tSwitchDownTimerStart = tSwitchTimerNow;
+		} 
+		if (frameData[6] > propOffSetting && frameData[6] < propOnSetting) {	// force mid point for switch
+				frameData[6] = propMidSetting;
+			} 
+		if (tSwitchDownTimerStart > 0 && frameData[6] == propMidSetting) {
+			if (tSwitchTimerNow - tSwitchDownTimerStart > 2000) {				// switch was held for more than 2 seconds
+				gearboxControlToggle = !gearboxControlToggle;					// toggle the gearbox control method
+			}
+			tSwitchDownTimerStart = 0;					// reset down timmer
+		}
+
+		if (gearboxControlToggle) {					//true - gearboxControlToggle = high = useing switch
+			if (frameData[7] < propOffSetting) {			// Code if switch being used
+				gearboxGear = 1;
+			} else if (frameData[7] > propOnSetting) {
+				gearboxGear = 3;
+			} else {
+				gearboxGear = 2;
+			}
+		} else {
+			if (gearboxFromMFUValue < propOffSetting) {		// Code if stick being used
+				gearboxGear = 1;
+			} else if (gearboxFromMFUValue > propOnSetting) {
+				gearboxGear = 3;
+			} else {
+				gearboxGear = 2;
+			}
+		}
+		if (gearboxGear != gearboxGearOld) {
+			gearboxPulseCount = 0;
+			gearboxGearOld = gearboxGear;
+		}
+		if (gearboxPulseCount < 15) {
+			gearboxGearOld = gearboxGear;
+			gearboxPulseCount += 1;
+			digitalWrite(gearboxServoPin, HIGH); 
+			delayMicroseconds(500 + (gearboxGear * 500));
+			digitalWrite(gearboxServoPin, LOW); 
+		}
+
+		// =========== Output Video Camera Control - Front/Rear =============
+			// cameraControlPin - controlled by monitoring Throttle
 		if (throttleValue > throttleReverseValue) {
 			if (reversing) {
 				digitalWrite(cameraControlPin, HIGH);	// rear camera
-				digitalWrite(ctrlCabLighting, LOW);			// moving so cab light off
+				digitalWrite(ctrlCabLightingPin, LOW);			// moving so cab light off
 				digitalWrite(cameraPowerPin, HIGH);			// and cameras on
 				if (debugMode) {
 					Serial.print(" Reversing. Throttle value: ");
@@ -302,25 +394,25 @@ void loop() {
 		}
 		if (throttleValue < throttleForwardValue) {
 			digitalWrite(cameraControlPin, LOW);	// front camera
-			digitalWrite(ctrlCabLighting, LOW);			// moving so cab light off
+			digitalWrite(ctrlCabLightingPin, LOW);			// moving so cab light off
 			digitalWrite(cameraPowerPin, HIGH);			// and cameras on
 			braked = false;
 			reversing = false;
 		}
-		if (debugMode) {
-			Serial.print(" Braked: ");
-			Serial.println(braked);
-		}
+//		if (debugMode) {
+//			Serial.print(" Braked: ");
+//			Serial.println(braked);
+//		}
 
-	// turn cameras off if stationary for xxx time
-		//digitalWrite(cameraPowerPin, LOW);
-	
-	// =========== Side Lights Control =============
+		// turn cameras off if stationary for xxx time
+			//digitalWrite(cameraPowerPin, LOW);
+		
+		// =========== Side Lights Control =============
 		if (frameData[2] == propMidSetting) digitalWrite(ctrlSideLights, HIGH);	
-		// Don't use "else" or marker lights go out when stop lights are on.
+			// Don't use "else" or marker lights go out when stop lights are on.
 		if (frameData[2] == propMinSetting) digitalWrite(ctrlSideLights, LOW);	
-	// =========== Indicator Repeaters (in steps) Control =============
-	// channel 3 & 4 = Indicators, MinSetting is ON, 
+		// =========== Indicator Repeaters (in steps) Control =============
+			// channel 3 & 4 = Indicators, MinSetting is ON, 
 		if (frameData[3] == propMinSetting) {
 			digitalWrite(ctrlLeftIndRepeater, HIGH);	
 		} else {
@@ -331,12 +423,12 @@ void loop() {
 		} else {
 			digitalWrite(ctrlRightIndRepeater, LOW);	
 		}
-	// =========== Cab Lighting Control =============
-	// cameraControlPin - controlled by monitoring Throttle
-	// channel 3 & 4 = Indicators, MinSetting is ON, So when Hazards on:
+		// =========== Cab Lighting Control =============
+			// cameraControlPin - controlled by monitoring Throttle
+			// channel 3 & 4 = Indicators, MinSetting is ON, So when Hazards on:
 		if (frameData[3] == propMinSetting && frameData[4] == propMinSetting) 
-							digitalWrite(ctrlCabLighting, HIGH); // Cab Lights on
-		// turned off in camera control section.
+							digitalWrite(ctrlCabLightingPin, HIGH); // Cab Lights on
+			// turned off in camera control section.
 	}
 
 	// ============== Output Debug info - Frame data and flash LED
@@ -357,8 +449,16 @@ void loop() {
 				Serial.print(frameData[i]);
 				Serial.print("; ");
 			}
+			Serial.println("");
+
 			Serial.print("Throttle value: ");
 			Serial.print(throttleValue);
+			Serial.print(". GearboxControl: Toggle: ");
+			Serial.print(gearboxControlToggle);
+			Serial.print(". Gear: ");
+			Serial.print(gearboxGear);
+			Serial.print(". MFUVal: ");
+			Serial.print(gearboxFromMFUValue);
 			Serial.println("");
 		}
 
@@ -366,8 +466,12 @@ void loop() {
 		if (Serial.available() > 0) {
 			String monSerialRead = Serial.readString();
 			
-			if (monSerialRead == "cabon\n") digitalWrite(ctrlCabLighting, HIGH);
-			if (monSerialRead == "caboff\n") digitalWrite(ctrlCabLighting, LOW);
+			if (monSerialRead == "cabon\n") digitalWrite(ctrlCabLightingPin, HIGH);
+			if (monSerialRead == "caboff\n") digitalWrite(ctrlCabLightingPin, LOW);
+
+			if (monSerialRead == "1\n") {gearboxGear = 1; gearboxPulseCount = 0;}
+			if (monSerialRead == "2\n") {gearboxGear = 2; gearboxPulseCount = 0;}
+			if (monSerialRead == "3\n") {gearboxGear = 3; gearboxPulseCount = 0;}
 
 			if (monSerialRead == "DebugON\n" || monSerialRead == "d\n" || monSerialRead == "d") {
 				Serial.println("Debug is now turned on");
