@@ -643,28 +643,32 @@ void loop() {
 				channelTimeCopy[outChannel] = PULSE_LENGTH_MID;
 			}
 			//--set direction pin
-			if (channelDirectionPIN[outChannel] > 0 && (channelTimeCopy[outChannel]-PULSE_LENGTH_MID) > 0 ) {
-				if (!digitalRead(channelDirectionPIN[outChannel])) digitalWrite(channelDirectionPIN[outChannel], HIGH); //on
-				// --- Special Type 2&3 ---
-				if (channelSpecialType[outChannel] == 2) {
-					digitalWrite(runningLightsPin2, HIGH);
-					turnLeftStart = millis();
-				}
-				if (channelSpecialType[outChannel] == 3) {
-					digitalWrite(runningLightsPin3, HIGH);
-					turnRightStart = millis();
-				}
-			} else {
-				if (digitalRead(channelDirectionPIN[outChannel])) digitalWrite(channelDirectionPIN[outChannel], LOW); //off
-				// --- Special Type 2&3 ---
-				if (channelSpecialType[outChannel] == 2) {
-					if (millis() - turnLeftStart < 100) digitalWrite(runningLightsPin2, LOW);
-				}
-				if (channelSpecialType[outChannel] == 3) {
-					if (millis() - turnRightStart < 100) digitalWrite(runningLightsPin3, LOW);
+			if (channelDirectionPIN[outChannel] > 0) {
+				if (channelTimeCopy[outChannel]-PULSE_LENGTH_MID > 0 ) {
+					if (!digitalRead(channelDirectionPIN[outChannel])) digitalWrite(channelDirectionPIN[outChannel], HIGH); //on
+					// --- Special Type 2&3 ---
+					if (channelSpecialType[outChannel] == 2) {
+						digitalWrite(runningLightsPin2, HIGH);
+						turnLeftStart = millis();
+					}
+					if (channelSpecialType[outChannel] == 3) {
+						digitalWrite(runningLightsPin3, HIGH);
+						turnRightStart = millis();
+					}
+				} else {
+					if (digitalRead(channelDirectionPIN[outChannel])) digitalWrite(channelDirectionPIN[outChannel], LOW); //off
+					// --- Special Type 2&3 ---
+					if (channelSpecialType[outChannel] == 2) {
+						if (millis() - turnLeftStart < 100) digitalWrite(runningLightsPin2, LOW);
+					}
+					if (channelSpecialType[outChannel] == 3) {
+						if (millis() - turnRightStart < 100) digitalWrite(runningLightsPin3, LOW);
+					}
 				}
 			}
-
+//========================================================================
+//  put special type processing here - no channel and no direction means just this processing.
+//========================================================================
 			if (channelPIN[outChannel] > 0) {
 				//--check for time limit
 				if (channelTimeLimit[outChannel] > 0) {		//is there a limit
@@ -739,9 +743,9 @@ void loop() {
 							tSwitchValue[tSwitchNo] = 1;
 							if (tSwitchPIN[tSwitchNo]) digitalWrite(tSwitchPIN[tSwitchNo], HIGH);  // set ON
 						}
-					} else {														// long ON  = turn OFF
-						tSwitchValue[tSwitchNo] = 0;
-						if (tSwitchPIN[tSwitchNo]) digitalWrite(tSwitchPIN[tSwitchNo], LOW);   	// set OFF
+					} else {												// long ON  = turn OFF	?????????????????
+						//tSwitchValue[tSwitchNo] = 0;						//			now used in tractor - gearbox control
+						//if (tSwitchPIN[tSwitchNo]) digitalWrite(tSwitchPIN[tSwitchNo], LOW);   	// set OFF
 					}
 				}
 				if (tSwitchType[tSwitchNo] == 10) {			// switch type 10 = Proportional output,  MID tggled on/off to 0
