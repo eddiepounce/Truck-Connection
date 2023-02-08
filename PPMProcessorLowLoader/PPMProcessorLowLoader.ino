@@ -116,9 +116,9 @@ const char invertChannel[MAX_CHANNELS+1] = {"---IIII--"}; 	// Invert or Normal (
 //											  12345678	// channel
 const int channelPIN[MAX_CHANNELS+1] = {0,0,0,0,0,0,0,0,0};	// channel pin
 //		Proportional output - PWM		  1 2 3 4 5 6  7  8 //channel
-const int channelDirectionPIN[MAX_CHANNELS+1] = {0,A0,5,4,3,7,0,A2,0};	//  channel direction pin 
+const int channelDirectionPIN[MAX_CHANNELS+1] = {0,A0,6,4,3,7,0,A3,0};	//  channel direction pin 
 //		Used to turn PWM values into on/off	  		1 2 3 4 5 6 7  8	//channel
-const int channelDirectionPIN2[MAX_CHANNELS+1] = {0,A1,6,0,0,0,0,A3,0};	// 2nd channel direction pin 
+const int channelDirectionPIN2[MAX_CHANNELS+1] = {0,A1,5,0,0,0,0,A2,0};	// 2nd channel direction pin 
 //		Used to turn PWM values into on/off	  		 1 2 3 4 5 6 7  8	//channel
 const int channelTimeLimit[MAX_CHANNELS+1] = {0,0,0,0,0,0,0,0,0};		//millis (1000 = 1 second)
 //		How long channel can be not centered	1 2 3 4 5 6 7 8 		//channel
@@ -156,18 +156,6 @@ const int rearLegsPulseIncrement = 5;
 int rearLegsLeftPulseLength = 2200;		//value for completely Down		1000 = UP
 int rearLegsRightPulseLength = 900;		//value for completely Down		2100 = UP
 int rearLegsLoopCount = 0;
-
-			
-// ------- Trailer Brake ------------------
-//const int trailerBrakePin = A5;
-//static bool trailerBrakeOn = false;		// don't actually know but startup sets it so needs to be opposite here.
-//unsigned long trailerBrakeTimeOn;
-//const int trailerBrakeOnDelay = 2000;	// delay before brake is automatically tuned off
-
-//static volatile unsigned int Failsafe[MAX_CHANNELS + 1]; 
-				// array holding channel fail safe values
-//static volatile decodeState_t State;         
-				// this will be one of the following states
 
 // ---- Toggle Switches ----- 
 // 			First 4 are user control.  
@@ -780,7 +768,7 @@ void loop() {
 		
 //----------------
 		case 's':	//switch - Off / Mid / High
-					//main diff to P is output forced to HIGH, MID, LOW
+					//main diff to P is output forced to LOW, MID, HIGH
 
 			if (channelTimeCopy[outChannel] < SWITCH_OFF_SETTING) {
 				channelTimeCopy[outChannel] = PULSE_LENGTH_MIN;
@@ -789,31 +777,20 @@ void loop() {
 			} else {
 				channelTimeCopy[outChannel] = PULSE_LENGTH_MID;
 			}
-//========================================================================
-//  put special type processing here - (no channel and no direction means just this processing.)
-//========================================================================
 
 
 			// --use direction pin as control
 			if (channelDirectionPIN[outChannel] > 0) {
-				if (channelTimeCopy[outChannel] == PULSE_LENGTH_MAX) {
-					digitalWrite(channelDirectionPIN[outChannel], HIGH); //on
-				} else {
-					digitalWrite(channelDirectionPIN[outChannel], LOW); //off
-				}
+				if (channelTimeCopy[outChannel] == PULSE_LENGTH_MID) digitalWrite(channelDirectionPIN[outChannel], HIGH); //on
+				if (channelTimeCopy[outChannel] == PULSE_LENGTH_MIN) digitalWrite(channelDirectionPIN[outChannel], LOW); //off
 			}
 			if (channelDirectionPIN2[outChannel] > 0) {
-				if (channelTimeCopy[outChannel] == PULSE_LENGTH_MID) {
-					digitalWrite(channelDirectionPIN2[outChannel], HIGH); //on
+				if (channelTimeCopy[outChannel] == PULSE_LENGTH_MAX) {
+						digitalWrite(channelDirectionPIN2[outChannel], HIGH); //on
 				} else {
-					digitalWrite(channelDirectionPIN2[outChannel], LOW); //off
+						digitalWrite(channelDirectionPIN2[outChannel], LOW); //off
 				}
-			}
-			
-//========================================================================
-//  put special type processing here - (no channel and no direction means just this processing.)
-//========================================================================
-
+			}			
 
 			if (channelPIN[outChannel] > 0) {
 				//--check for time limit
@@ -1043,6 +1020,30 @@ void loop() {
 	// No input for 0.5	sec (some frames seen)
 	if (mon0 && monLED_CycleCount > 50 && (monTimeElapse) > 500) {  // 50 frames seen + 0.5 sec 
 		mon0 = false; mon1=true;
+		// ------------------------------------------
+		// ---- Reset some stuff if input lost!! ----
+		//-------------------------------------------
+		for (int i = 1; i <= maxChannels; i++){
+			if (channelPIN[i] > 0) {
+				digitalWrite(channelPIN[i], LOW); 
+			}
+			if (channelDirectionPIN[i] > 0) {
+				digitalWrite(channelDirectionPIN[i], LOW); 
+			}
+			if (channelDirectionPIN2[i] > 0) {
+				digitalWrite(channelDirectionPIN2[i], LOW); 
+			}
+		}
+		for (int i = 1; i <= MAX_tSwitch; i++){
+			if (tSwitchPIN[i] > 0) {
+				digitalWrite(tSwitchPIN[i], LOW); 
+			}
+		} 
+		
+		
+		
+		
+		//-------------------------------------------		
 	}
 	// No input for 1 sec (some frames seen)
 	if (mon1 && monLED_CycleCount > 50 && (monTimeElapse) > 1000) {  // 50 frames + 1 sec 
