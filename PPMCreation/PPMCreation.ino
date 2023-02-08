@@ -72,7 +72,7 @@ enableInterrupt(inputPin, interruptReadChannels, PULSE_EDGE);
 */
 
 #include <Arduino.h>
-
+int inDelay = 0;
 // -------------------------
 //  Constants and variables to control functionality
 //--------------------------
@@ -355,9 +355,9 @@ void loop() {
 			}
 		} else {
 			if (gearboxFromMFUValue < propOffSetting) {		// Code if stick being used
-				gearboxGear = 1;
-			} else if (gearboxFromMFUValue > propOnSetting) {
 				gearboxGear = 3;
+			} else if (gearboxFromMFUValue > propOnSetting) {
+				gearboxGear = 1;
 			} else {
 				gearboxGear = 2;
 			}
@@ -366,13 +366,34 @@ void loop() {
 			gearboxPulseCount = 0;
 			gearboxGearOld = gearboxGear;
 		}
-		if (gearboxPulseCount < 15) {
-			gearboxGearOld = gearboxGear;
-			gearboxPulseCount += 1;
+		if (gearboxPulseCount < 17) {		// use a numer 1 less that divisible by 3.
+			if (throttleValue > throttleReverseValue || throttleValue < throttleForwardValue) gearboxPulseCount += 1;
+//			gearboxPulseCount += 1;
 			digitalWrite(gearboxServoPin, HIGH); 
-			delayMicroseconds(500 + (gearboxGear * 500));
+			
+			
+			if (inDelay == 0) {
+	//			delayMicroseconds(500 + (gearboxGear * 500));		// this should be correct
+	//			delayMicroseconds(400 + (gearboxGear * 550));		//  950, 1500, 2050.
+				if (gearboxGear == 3) {
+					if (gearboxPulseCount % 3 != 0) {
+						delayMicroseconds(2000);
+					} else {
+						delayMicroseconds(1700);
+					}
+				} else {
+					delayMicroseconds(500 + (gearboxGear * 500));
+				}
+	
+			} else {
+				delayMicroseconds(inDelay);
+			}
+
+
 			digitalWrite(gearboxServoPin, LOW); 
 		}
+		
+		
 
 		// =========== Output Video Camera Control - Front/Rear =============
 			// cameraControlPin - controlled by monitoring Throttle
@@ -465,15 +486,24 @@ void loop() {
 		// Set debug on or off
 		if (Serial.available() > 0) {
 			String monSerialRead = Serial.readString();
+			monSerialRead.trim();               // remove any \r \n whitespace at the end of the String
+
+			if (monSerialRead == "cabon") digitalWrite(ctrlCabLightingPin, HIGH);
+			if (monSerialRead == "caboff") digitalWrite(ctrlCabLightingPin, LOW);
+
+			if (monSerialRead == "1") {gearboxGear = 1; gearboxPulseCount = 0;}
+			if (monSerialRead == "2") {gearboxGear = 2; gearboxPulseCount = 0;}
+			if (monSerialRead == "3") {gearboxGear = 3; gearboxPulseCount = 0;}
 			
-			if (monSerialRead == "cabon\n") digitalWrite(ctrlCabLightingPin, HIGH);
-			if (monSerialRead == "caboff\n") digitalWrite(ctrlCabLightingPin, LOW);
-
-			if (monSerialRead == "1\n") {gearboxGear = 1; gearboxPulseCount = 0;}
-			if (monSerialRead == "2\n") {gearboxGear = 2; gearboxPulseCount = 0;}
-			if (monSerialRead == "3\n") {gearboxGear = 3; gearboxPulseCount = 0;}
-
-			if (monSerialRead == "DebugON\n" || monSerialRead == "d\n" || monSerialRead == "d") {
+			if (monSerialRead.toInt() > 900 && monSerialRead.toInt() < 2100) {
+				inDelay = monSerialRead.toInt();
+				gearboxPulseCount = 0;
+				Serial.print("inDelay: ");
+				Serial.println(inDelay);
+			}
+			if (monSerialRead == "0") {inDelay = 0; gearboxGear = 2; gearboxPulseCount = 0;}
+			
+			if (monSerialRead == "DebugON" || monSerialRead == "d") {
 				Serial.println("Debug is now turned on");
 				debugMode = true;
 			} else {
@@ -487,13 +517,4 @@ void loop() {
 }
 
 //   END		END			END			END
-
-
-
-
-
-
-
-
-
 
