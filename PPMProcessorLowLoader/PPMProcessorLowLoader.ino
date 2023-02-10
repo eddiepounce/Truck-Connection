@@ -356,6 +356,12 @@ void setup() {
 			digitalWrite(tSwitchPIN[i], LOW); 
 		}
 	} 
+	pinMode(monLED_PIN, OUTPUT);		// 
+	//pinMode(legsSensorPin, INPUT);		// Linear Hall Effect Sensor - no pullup needed
+	//pinMode(trailerBrakePin, OUTPUT);
+	//pinMode(runningLightsPin1, OUTPUT);			runningLightsFrontPin
+	//pinMode(runningLightsPin2, OUTPUT);			runningLightsRearRightPin
+	//pinMode(runningLightsPin3, OUTPUT);			runningLightsRearLeftPin
 	
 	for (int i=1; i <= 20; i++) {						// initialise Rear Legs position
 		digitalWrite(rearLegsLeftPin, HIGH); 
@@ -366,16 +372,6 @@ void setup() {
 		digitalWrite(rearLegsRightPin, LOW); 
 		delay(18);
 	}
-
-
-
-
-	pinMode(channelPIN[2]-1, OUTPUT);		// Extra for separate (from Rear) STOP lights
-	//pinMode(legsSensorPin, INPUT);		// Linear Hall Effect Sensor - no pullup needed
-	//pinMode(trailerBrakePin, OUTPUT);
-	//pinMode(runningLightsPin1, OUTPUT);			runningLightsFrontPin
-	//pinMode(runningLightsPin2, OUTPUT);			runningLightsRearRightPin
-	//pinMode(runningLightsPin3, OUTPUT);			runningLightsRearLeftPin
 	
 	bitWrite(TIMSK2, OCIE2A, 0); // disable interrupt
 	// -- set timer2 interrupt  for interrupt timer - too low and the system locks up so min 40?
@@ -850,7 +846,7 @@ void loop() {
 			if (tSwitchTimerStartON > 0 && channelTimeCopy[outChannel] == PULSE_LENGTH_MID) {	
 																						// switch pulsed ON
 				// #########  Switch Type = 1  ########
-				if (tSwitchType[tSwitchNo] == 1 || tSwitchType[tSwitchNo] == 3) {			// switch type 0 = toggle on/off (and count to 3)
+				if (tSwitchType[tSwitchNo] == 1 || tSwitchType[tSwitchNo] == 3) {			// switch type 1 = toggle on/off (and count to 3)
 					if (tSwitchTimerNow - tSwitchTimerStartON < tSwitchSetTime) {	// short ON = toggle
 						if (tSwitchValue[tSwitchNo]) {							// value on?
 							if (tSwitchNo == MAX_tSwitch-1 || tSwitchNo == 3) {	// (switch 3 for testing mechanism!)
@@ -1077,7 +1073,7 @@ void loop() {
 	//--Monitoring--end
 
 	//----------------------------------
-	// Flash onboard LED to show status and output Debug info if switch on.
+	// Flash onboard LED to show status and output TSwich # if Debug switch off.
 	//----------------------------------
 	if (monLED_FlashTimeStart == 0) {
 		digitalWrite(monLED_PIN, HIGH);
@@ -1128,19 +1124,15 @@ void loop() {
 				tSwitchLED_FlashTimeStart = 0;							//reset flash
 			}
 		}
-		if (monLED_CycleCount > 50 && monTimeElapse < 500) {	// recently had a frame - 0.5 secs
-			monLED_OnTime = 50; monLED_OffTime = 500; 
-			monLED_FlashPulse = 1;  // use basic OK flash.
-			monLED_Gap = 1500; 
-		}
+		monLED_FlashPulse = 1;  // use basic OK flash.
 	} else {
 		digitalWrite(tSwitchPIN[MAX_tSwitch], LOW);
-		// set different build in LED flash
-		if (monLED_CycleCount > 50 && monTimeElapse < 500) {	// recently had a frame - 0.5 secs
-			monLED_OnTime = 50; monLED_OffTime = 400; 
-			monLED_FlashPulse = tSwitchNo;  
-			monLED_Gap = 1500;
-		} 
+		monLED_FlashPulse = tSwitchNo;  // use TSwitch# of flashes.
+	}
+	// set built in LED flash
+	if (monLED_CycleCount > 50 && monTimeElapse < 500) {	// recently had a frame - 0.5 secs
+		monLED_OnTime = 50; monLED_OffTime = 500; 
+		monLED_Gap = 1500; 
 	}
 	
 	if (millis() - debugCyleStart > debugCycleTime) {		//loop for serial input and debug output
