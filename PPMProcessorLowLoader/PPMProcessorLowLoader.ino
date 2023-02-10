@@ -87,7 +87,7 @@ const int inputPin 			= 2;	// Input pin for PPM stream
 const int MAX_CHANNELS		= 8;	// number of channels being input in PPM stream
 const int maxChannels		= 7;	// channels to process - can be less but not more that available input
 #define PULSE_EDGE 		RISING		// Rising is better shape than falling in PPM stream
-const int timerPrecision = 30;
+const int timerPrecision = 30;		//30
 			//  This controls the timing of the interrupt timer - too low and the system locks up so min 30?
 			//  It is effectively the number of micro seconds between interrupts 
 			//					- too quick and all time is in interrupts!!
@@ -422,16 +422,6 @@ void setup() {
 //		Main Loop
 //--------------------------------
 void loop() {
-	// ============ Frame Start signal for scope ==========
-	if (channelIn == 0 && scopePulse == false) {
-		// Pulse out on pin to enable lock on Scope display for Frame.
-		digitalWrite(frameStartPin, HIGH); 
-		scopePulse = true;
-	} else {
-		digitalWrite(frameStartPin, LOW); 
-		scopePulse = false;
-	}
-//	if (channelIn != 0) scopePulse = false;
 
 	// =========== start an output cycle =============
 	if (frameAvailable == true) {
@@ -462,6 +452,13 @@ void loop() {
 		bitWrite(TIMSK2, OCIE2A, 1); 	// enable output timer interrupt  (disabled for startup)
 	}
 	monTimeElapse = millis() - monTimeOfLastCycle;  
+
+	// ============ Frame Start signal for scope ==========
+	if (outChannel == 1) {
+		digitalWrite(frameStartPin, HIGH); 
+	} else {
+		digitalWrite(frameStartPin, LOW); 
+	}
 
 
 	// --------------------------------------------------------------
@@ -970,7 +967,7 @@ void loop() {
 						rearLegsLoopCount = rearLegsLoopCount - 1;
 					}
 				} else {
-					rearLegsLoopCount = 10;
+					rearLegsLoopCount = 5;
 					rearLegsRightPulseLength = rearLegsRightPulseLength + rearLegsPulseIncrement;
 					rearLegsLeftPulseLength = 3100 - rearLegsRightPulseLength;
 				}
@@ -983,7 +980,7 @@ void loop() {
 						rearLegsLoopCount = rearLegsLoopCount - 1;
 					}
 				} else {
-					rearLegsLoopCount = 10;
+					rearLegsLoopCount = 5;
 					rearLegsLeftPulseLength = rearLegsLeftPulseLength + rearLegsPulseIncrement;
 					rearLegsRightPulseLength = 3100 - rearLegsLeftPulseLength;
 				}
@@ -1100,7 +1097,7 @@ void loop() {
 		}	
 	}
 	
-	// flash LED with tagSwitch no. of flashes (so one can see which switch is for input)
+	// flash Debug LED with tagSwitch no. of flashes (so one can see which switch is for input)
 	if (tSwitchValue[MAX_tSwitch]) {
 		if (tSwitchLED_FlashTimeStart == 0) {
 			digitalWrite(tSwitchPIN[MAX_tSwitch], HIGH);
@@ -1134,6 +1131,13 @@ void loop() {
 		monLED_OnTime = 50; monLED_OffTime = 500; 
 		monLED_Gap = 1500; 
 	}
+	// set different built in LED flash
+	if (monLED_CycleCount > 50 && monTimeElapse < 500) {	// recently had a frame - 0.5 secs
+		monLED_OnTime = 50; monLED_OffTime = 500; 
+		monLED_FlashPulse = 1;  // use basic OK flash.
+		monLED_Gap = 1500; 
+	}
+
 	
 	if (millis() - debugCyleStart > debugCycleTime) {		//loop for serial input and debug output
 		debugCyleStart = millis();
