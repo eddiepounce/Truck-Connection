@@ -1129,13 +1129,6 @@ void loop() {
 		monLED_OnTime = 50; monLED_OffTime = 500; 
 		monLED_Gap = 1500; 
 	}
-	// set different built in LED flash
-	if (monLED_CycleCount > 50 && monTimeElapse < 500) {	// recently had a frame - 0.5 secs
-		monLED_OnTime = 50; monLED_OffTime = 500; 
-		monLED_FlashPulse = 1;  // use basic OK flash.
-		monLED_Gap = 1500; 
-	}
-
 	
 	if (millis() - debugCyleStart > debugCycleTime) {		//loop for serial input and debug output
 		debugCyleStart = millis();
