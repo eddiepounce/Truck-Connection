@@ -116,7 +116,7 @@ const char invertChannel[MAX_CHANNELS+1] = {"---IIII--"}; 	// Invert or Normal (
 //											  12345678	// channel
 const int channelPIN[MAX_CHANNELS+1] = {0,0,0,0,0,0,0,0,0};	// channel pin
 //		Proportional output - PWM		  1 2 3 4 5 6  7  8 //channel
-const int channelDirectionPIN[MAX_CHANNELS+1] = {0,A0,6,4,3,7,0,A3,0};	//  channel direction pin 
+const int channelDirectionPIN[MAX_CHANNELS+1] = {0,A0,6,3,4,7,0,A3,0};	//  channel direction pin 
 //		Used to turn PWM values into on/off	  		1 2 3 4 5 6 7  8	//channel
 const int channelDirectionPIN2[MAX_CHANNELS+1] = {0,A1,5,0,0,0,0,A2,0};	// 2nd channel direction pin 
 //		Used to turn PWM values into on/off	  		 1 2 3 4 5 6 7  8	//channel
@@ -450,16 +450,14 @@ void loop() {
 		debugCycleTime = 1000;  // reset debugCycleTime to 1 second 
 								// (set very slow if connection lost (no frames seen)
 		bitWrite(TIMSK2, OCIE2A, 1); 	// enable output timer interrupt  (disabled for startup)
+		
+		// ============ Frame Start signal for scope ==========
+		digitalWrite(frameStartPin, HIGH); 
 	}
 	monTimeElapse = millis() - monTimeOfLastCycle;  
 
-	// ============ Frame Start signal for scope ==========
-	if (outChannel == 1) {
-		digitalWrite(frameStartPin, HIGH); 
-	} else {
-		digitalWrite(frameStartPin, LOW); 
-	}
-
+	// ============ Frame Start signal for scope (END) ==========
+	if (outChannel != 1) digitalWrite(frameStartPin, LOW); 
 
 	// --------------------------------------------------------------
 	// ========    processing for one channel at a time    ==========
