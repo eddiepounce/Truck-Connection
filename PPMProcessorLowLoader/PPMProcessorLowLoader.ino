@@ -224,7 +224,8 @@ unsigned int outChannel = MAX_CHANNELS+10;		// make sure output doesn't start ti
 //		Pin13 (LED_BUILTIN) is on board LED = fast flash at start - no input signal
 //--------------------------
 const int frameStartPin = A4;					// Frame Start signal for scope 
-bool scopePulse = false;							// Fir timing the Frame Start signal
+unsigned long frameStartTime = 0;				// For timing the Frame Start signal
+
 int statusChannelTimeCopy[MAX_CHANNELS + 1];		// copy of channel times used for Debug
 const int monLED_PIN = LED_BUILTIN;  //pin 13
 int monLED_OnTime	= 10;	//flash time - On time 		// setting for initial flashing before signal found
@@ -393,20 +394,6 @@ void setup() {
 			//byte timmer2Save = TIMSK2;	// save interrupt byte (current situation)
 			//TIMSK2 &= ~(1 << OCIE2A);		// disable interrupt
 			//TIMSK2 = timmer2Save;			// restore interrupt byte (old situation)
-
-//	ADMUX = _BV(REFS0) | _BV(MUX3) | _BV(MUX2) | _BV(MUX1);   // setup ADMUX for reading supply power value
-
-/* -- Not needed with cheaper ESC --
-	// Initialise legs so ESC gets a good centre position (else strange things can happen at hookup)
-	int pulseTime = 1500;	// 1.5 millisecond pulses - i.e. mid position
-	int pulseCount = 30; 	// 20+ pulses needed for ESC centre initialisation
-	for (int i=1; i <= pulseCount; i++) {
-		digitalWrite(channelPIN[1], HIGH); 	// set channel 1 (legs) high
-		delayMicroseconds(pulseTime);		//	for xx time
-		digitalWrite(channelPIN[1], LOW);	// set channel 1 (legs) low
-		delay(18);							// wait for inter pulse gap
-	}
-*/
 	
 	// Initialise PPM input interrupt system
 	pinMode(inputPin, PPM_INPUT_TYPE);  
@@ -449,15 +436,18 @@ void loop() {
 		//--Monitoring--end
 		debugCycleTime = 1000;  // reset debugCycleTime to 1 second 
 								// (set very slow if connection lost (no frames seen)
-		bitWrite(TIMSK2, OCIE2A, 1); 	// enable output timer interrupt  (disabled for startup)
+		//bitWrite(TIMSK2, OCIE2A, 1); 	// enable output timer interrupt  (disabled for startup)
+		if (!bitRead(TIMSK2, OCIE2A)) bitWrite(TIMSK2, OCIE2A, 1); // enable output timer interrupt if not already (disabled for startup)
 		
 		// ============ Frame Start signal for scope ==========
 		digitalWrite(frameStartPin, HIGH); 
+		frameStartTime = micros();	
 	}
-	monTimeElapse = millis() - monTimeOfLastCycle;  
-
+	
 	// ============ Frame Start signal for scope (END) ==========
-	if (outChannel != 1) digitalWrite(frameStartPin, LOW); 
+	if (micros() - frameStartTime > 500) digitalWrite(frameStartPin, LOW);	// controls Frame Start Pulse Length - 2.5mS ish
+
+	monTimeElapse = millis() - monTimeOfLastCycle;  
 
 	// --------------------------------------------------------------
 	// ========    processing for one channel at a time    ==========
