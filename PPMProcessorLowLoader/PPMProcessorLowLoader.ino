@@ -116,7 +116,7 @@ const char invertChannel[MAX_CHANNELS+1] = {"---IIII--"}; 	// Invert or Normal (
 //											  12345678	// channel
 const int channelPIN[MAX_CHANNELS+1] = {0,0,0,0,0,0,0,0,0};	// channel pin
 //		Proportional output - PWM		  1 2 3 4 5 6  7  8 //channel
-const int channelDirectionPIN[MAX_CHANNELS+1] = {0,A0,6,3,4,7,0,A3,0};	//  channel direction pin 
+const int channelDirectionPIN1[MAX_CHANNELS+1] = {0,A0,6,3,4,7,0,A3,0};	//  channel direction pin 
 //		Used to turn PWM values into on/off	  		1 2 3 4 5 6 7  8	//channel
 const int channelDirectionPIN2[MAX_CHANNELS+1] = {0,A1,5,0,0,0,0,A2,0};	// 2nd channel direction pin 
 //		Used to turn PWM values into on/off	  		 1 2 3 4 5 6 7  8	//channel
@@ -333,25 +333,27 @@ void setup() {
 	pinMode(frameStartPin, OUTPUT);		// For frame start pulse to enable lock on Scope display 
 	digitalWrite(frameStartPin, LOW); 
 
-	for (int i = 1; i <= maxChannels; i++){
+	for (int i = 1; i <= MAX_CHANNELS; i++){
+		// init the storage for input interrupt routine and its copies
+		channelTime[i] = -2;  // negative = input processed
+		channelTimeCopy[i] = -2; 
+		statusChannelTimeCopy[i] = -2; 
 		// set the output pins (hardware) as needed.
 		if (channelPIN[i] > 0) {
 			pinMode(channelPIN[i], OUTPUT);
 			digitalWrite(channelPIN[i], LOW); 
 		}
-		if (channelDirectionPIN[i] > 0) {
-			pinMode(channelDirectionPIN[i], OUTPUT);
-			digitalWrite(channelDirectionPIN[i], LOW); 
+		if (channelDirectionPIN1[i] > 0) {
+			pinMode(channelDirectionPIN1[i], OUTPUT);
+			digitalWrite(channelDirectionPIN1[i], LOW); 
 		}
 		if (channelDirectionPIN2[i] > 0) {
 			pinMode(channelDirectionPIN2[i], OUTPUT);
 			digitalWrite(channelDirectionPIN2[i], LOW); 
 		}
-		// init the storage for input interrupt routine
-		channelTime[i] = -2;  // negative = input processed
 	}
 	for (int i = 1; i <= MAX_tSwitch; i++){
-		// set the output pins (hardware) as needed.
+		// set the output pins (hardware) as needed (Toggle switch).
 		if (tSwitchPIN[i] > 0) {
 			pinMode(tSwitchPIN[i], OUTPUT);
 			digitalWrite(tSwitchPIN[i], LOW); 
@@ -386,8 +388,10 @@ void setup() {
 	OCR2A = 2*timerPrecision;	//  2 * 40   (must be <256)
 	TCCR2A |= (1 << WGM21);	// turn on CTC mode
 	TCCR2B |= (1 << CS21);    // Set CS21 bit for 8 prescaler;  22 for 64
-//	TIMSK2 |= (1 << OCIE2A);	// enable timer compare interrupt
+//######################################################################################
 //	Don't enable here so timer doesn't start before first frame available
+//  This was causing timing problem in "frameAvailable" in Loop si init storage and put back here.
+	TIMSK2 |= (1 << OCIE2A);	// enable timer compare interrupt
 		//	TIMSK2 &= ~(1 << OCIE2A);	// disable interrupt
 		// bitWrite(TIMSK2, OCIE2A, 0); // disable interrupt 
 		// bitWrite(TIMSK2, OCIE2A, 1); // enable interrupt 	
@@ -436,8 +440,10 @@ void loop() {
 		//--Monitoring--end
 		debugCycleTime = 1000;  // reset debugCycleTime to 1 second 
 								// (set very slow if connection lost (no frames seen)
+		
+		// This caused a problem I think - so init storage (so no problem for output to start early) and move this to setup.
 		//bitWrite(TIMSK2, OCIE2A, 1); 	// enable output timer interrupt  (disabled for startup)
-		if (!bitRead(TIMSK2, OCIE2A)) bitWrite(TIMSK2, OCIE2A, 1); // enable output timer interrupt if not already (disabled for startup)
+		//if (!bitRead(TIMSK2, OCIE2A)) bitWrite(TIMSK2, OCIE2A, 1); // enable output timer interrupt if not already (disabled for startup)
 		
 		// ============ Frame Start signal for scope ==========
 		digitalWrite(frameStartPin, HIGH); 
@@ -458,28 +464,7 @@ void loop() {
 		channelTimeCopy[outChannel] = channelTime[outChannel];
 		if (invertChannel[outChannel] == 'I') 		// reverse direction of channel
 					channelTimeCopy[outChannel] = ((-(channelTimeCopy[outChannel] - PULSE_LENGTH_MID))+PULSE_LENGTH_MID); 
-/*
-		// learn centre point of TX / RX for 4 stick channels.
-		if (outChannel <= 4 && monLED_CycleCount > 10 && monLED_CycleCount < 60) {		// first 50 frames (1 second)
-			PULSE_LENGTH_MID_temp[outChannel] = (PULSE_LENGTH_MID_temp[outChannel] + channelTimeCopy[outChannel]) / 2;
-			//Serial.print("-- Channel: ");
-			//Serial.print(outChannel);
-			//Serial.print("  value: ");
-			//Serial.print(PULSE_LENGTH_MID_temp[outChannel]);
-			//Serial.println("");
-		}
-*/	
-		// -------------------------------------------------
-		// 					Process channel
-		// -------------------------------------------------
-/*	THIS is a P as per below
-		if (outChannel == 1) {
-	
-		}
-*/		
-		
-		
-		
+
 		
 		switch (channelType[outChannel]) {
 		// 		set 'output high' on each proportional channel  and set others appropriately
@@ -493,10 +478,10 @@ void loop() {
 //--------------------
 		case 'L':					// LED from centre
 			//--set direction pin if there is one
-			if (channelDirectionPIN[outChannel] > 0 && (channelTimeCopy[outChannel]-PULSE_LENGTH_MID) > 0 ) {
-				digitalWrite(channelDirectionPIN[outChannel], HIGH);// direction on
+			if (channelDirectionPIN1[outChannel] > 0 && (channelTimeCopy[outChannel]-PULSE_LENGTH_MID) > 0 ) {
+				digitalWrite(channelDirectionPIN1[outChannel], HIGH);// direction on
 			} else {
-				digitalWrite(channelDirectionPIN[outChannel], LOW);// direction off
+				digitalWrite(channelDirectionPIN1[outChannel], LOW);// direction off
 			}
 			if (channelPIN[outChannel] > 0) {
 				//--check for time limit
@@ -550,11 +535,11 @@ void loop() {
 //					digitalWrite(runningLightsPin3, LOW);  // set off
 				}
 				if (channelTimeCopy[outChannel] > SWITCH_ON_SETTING) {
-					digitalWrite(channelDirectionPIN[outChannel], HIGH);  // set on
+					digitalWrite(channelDirectionPIN1[outChannel], HIGH);  // set on
 				} 
 				//special off if at low  (can't use an "else" here - channel has 3 positions)
 				if (!channelTimeCopy[outChannel] > SWITCH_ON_SETTING) {
-					digitalWrite(channelDirectionPIN[outChannel], LOW);  // set off
+					digitalWrite(channelDirectionPIN1[outChannel], LOW);  // set off
 				}
 			}
 			if (channelPIN[outChannel] > 0) {
@@ -595,12 +580,12 @@ void loop() {
 //----------------
 		case 'P':					//proportional
 			//--set direction pin						
-			if (channelDirectionPIN[outChannel] > 0 
+			if (channelDirectionPIN1[outChannel] > 0 
 							&& channelTimeCopy[outChannel] > SWITCH_MID_SETTING_A 
 							&& channelTimeCopy[outChannel] < SWITCH_MID_SETTING_B) {
-				digitalWrite(channelDirectionPIN[outChannel], HIGH);// direction on
+				digitalWrite(channelDirectionPIN1[outChannel], HIGH);// direction on
 			} else {
-				digitalWrite(channelDirectionPIN[outChannel], LOW);// direction off
+				digitalWrite(channelDirectionPIN1[outChannel], LOW);// direction off
 			}
 			if (outChannel == trailerLegsChannel) {
 				rearLegsDirection = 0;
@@ -679,10 +664,10 @@ void loop() {
 
 
 			// --use direction pin as control
-			if (channelDirectionPIN[outChannel] > 0) {
+			if (channelDirectionPIN1[outChannel] > 0) {
 				if (channelTimeCopy[outChannel] == PULSE_LENGTH_MAX) {
-//					if (!digitalRead(channelDirectionPIN[outChannel])) digitalWrite(channelDirectionPIN[outChannel], HIGH); //on
-					digitalWrite(channelDirectionPIN[outChannel], HIGH); //on
+//					if (!digitalRead(channelDirectionPIN1[outChannel])) digitalWrite(channelDirectionPIN1[outChannel], HIGH); //on
+					digitalWrite(channelDirectionPIN1[outChannel], HIGH); //on
 //					// --- Special Type 2&3 ---
 //					if (channelSpecialType[outChannel] == 2) {
 //						digitalWrite(runningLightsPin2, HIGH);
@@ -693,8 +678,8 @@ void loop() {
 //						turnRightStart = millis();
 //					}
 				} else {
-//					if (digitalRead(channelDirectionPIN[outChannel])) digitalWrite(channelDirectionPIN[outChannel], LOW); //off
-					digitalWrite(channelDirectionPIN[outChannel], LOW); //off
+//					if (digitalRead(channelDirectionPIN1[outChannel])) digitalWrite(channelDirectionPIN1[outChannel], LOW); //off
+					digitalWrite(channelDirectionPIN1[outChannel], LOW); //off
 					// --- Special Type 2&3 ---
 //					if (channelSpecialType[outChannel] == 2) {
 //						if (millis() - turnLeftStart < 100) digitalWrite(runningLightsPin2, LOW);
@@ -761,9 +746,9 @@ void loop() {
 
 
 			// --use direction pin as control
-			if (channelDirectionPIN[outChannel] > 0) {
-				if (channelTimeCopy[outChannel] == PULSE_LENGTH_MID) digitalWrite(channelDirectionPIN[outChannel], HIGH); //on
-				if (channelTimeCopy[outChannel] == PULSE_LENGTH_MIN) digitalWrite(channelDirectionPIN[outChannel], LOW); //off
+			if (channelDirectionPIN1[outChannel] > 0) {
+				if (channelTimeCopy[outChannel] == PULSE_LENGTH_MID) digitalWrite(channelDirectionPIN1[outChannel], HIGH); //on
+				if (channelTimeCopy[outChannel] == PULSE_LENGTH_MIN) digitalWrite(channelDirectionPIN1[outChannel], LOW); //off
 			}
 			if (channelDirectionPIN2[outChannel] > 0) {
 				if (channelTimeCopy[outChannel] == PULSE_LENGTH_MAX) {
@@ -1008,8 +993,8 @@ void loop() {
 			if (channelPIN[i] > 0) {
 				digitalWrite(channelPIN[i], LOW); 
 			}
-			if (channelDirectionPIN[i] > 0) {
-				digitalWrite(channelDirectionPIN[i], LOW); 
+			if (channelDirectionPIN1[i] > 0) {
+				digitalWrite(channelDirectionPIN1[i], LOW); 
 			}
 			if (channelDirectionPIN2[i] > 0) {
 				digitalWrite(channelDirectionPIN2[i], LOW); 
@@ -1252,7 +1237,8 @@ void loop() {
 long readVcc() {
 	long result; // Read 1.1V reference against AVcc 
 	ADMUX = _BV(REFS0) | _BV(MUX3) | _BV(MUX2) | _BV(MUX1); // done in setup!!
-	delay(2); // Wait for Vref to settle 
+	//delay(2); // Wait for Vref to settle 
+	delayMicroseconds(2000);		// doesn't block interrupts!
 	ADCSRA |= _BV(ADSC); // Convert 
 	while (bit_is_set(ADCSRA,ADSC)); 
 	result = ADCL; 
