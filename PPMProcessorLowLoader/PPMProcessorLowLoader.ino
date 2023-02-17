@@ -26,8 +26,8 @@ Channel		Function				Pin		Info								Implementation
 	1 	 	Front Legs				A0/A1	Low/Mid/High						S - for Front Legs motor control
 	2 	 	Rear Lights				6		Off/Mid/High						l - Prop whole swing - LED driver
 	 	 	Stop Lights				5			Single feed converted onto 2 pins using direction
-	3 	 	Indicator Left			4		Off/On								S - using direction - LED driver
-	4 	 	Indicator Right			3		Off/On								S - using direction - LED driver
+	3 	 	Indicator Left			3		Off/On								S - using direction - LED driver
+	4 	 	Indicator Right			4		Off/On								S - using direction - LED driver
 	5 	 	Reversing Light			7		Off/On								S - using direction - LED driver
 	6 	 	ToggleSwitch			-		Low/Mid/High						Toggle for On/Off control array
 	7		Ramp Motor				A2/A3	Low/Mid/High						S - for Ramp Motor control
@@ -77,7 +77,6 @@ Trailer Running Lights = Back-6cm; 4 x 21cm; 7.5cm-Front.  Front Marker Lights =
 */
 
 #include <Arduino.h>
-//#include <EnableInterrupt.h>
 
 // -------------------------
 //  Constants and variables to control functionality
@@ -87,21 +86,21 @@ const int inputPin 			= 2;	// Input pin for PPM stream
 const int MAX_CHANNELS		= 8;	// number of channels being input in PPM stream
 const int maxChannels		= 7;	// channels to process - can be less but not more that available input
 #define PULSE_EDGE 		RISING		// Rising is better shape than falling in PPM stream
-const int timerPrecision = 30;		//30
-			//  This controls the timing of the interrupt timer - too low and the system locks up so min 30?
-			//  It is effectively the number of micro seconds between interrupts 
-			//					- too quick and all time is in interrupts!!
-const int minPWMValue = 700;		// = .7ms - shortest pulse = 1ms
+const int minPWMValue 		= 700;	// = .7ms - shortest pulse = 1ms
 			//used as debounce for input and means PWM channel for toggleSwitch channels
 
 //Channel type - Proportional (PWM output)
-//				Switch - Low / Off / High
-//				switch - Off / Mid / High
-//				uppercase L = LED (via PWM) offToOn from center ignoring direction
-//				lowercase l = LED (via PWM) offToOn for whole travel
-// 		NOTE:  PWM only available via some pins depending on board/processor.
-//				Toggle - only one possible with up to 10 switches in a control array.
-const char channelType[] =   {"-SsSSSTSS"};  
+//				 Switch - Low / Off / High
+//				 switch - Off / Mid / High
+//				 uppercase L = LED (via PWM if required) offToOn from centre ignoring direction
+//				 lowercase l = LED (via PWM if required) offToOn for whole travel
+// 								NOTE:  PWM only available via some pins depending on board/processor.
+//				 Toggle - only one possible with up to 10? switches in a control array.
+//						- needs a short or long pulse - short to increment, long to reset to switch 1
+//						- UP for control of switch number - short pulse to increment, long pulse to reset to switch 1
+//						- DOWN for on/off control of the switch - short pulse to flip
+
+const char channelType[] =   {"-SsSSSTSS"}; // for LowLoader
 //								12345678	// channel
 //			1 = Front Legs
 //			2 = Rear/Stop Lights
@@ -109,13 +108,12 @@ const char channelType[] =   {"-SsSSSTSS"};
 //			4 = Indicator
 //			5 = Reversing Light
 //			6 = ToggleSwitch
-//			7 = ControlSwitch
+//			7 = RampMotor
 
-//const char invertChannel[MAX_CHANNELS+1] = {"---IIII--"}; 	// Invert or Normal ( I or - )
 const char invertChannel[MAX_CHANNELS+1] = {"---IIII--"}; 	// Invert or Normal ( I or - )
 //											  12345678	// channel
 const int channelPIN[MAX_CHANNELS+1] = {0,0,0,0,0,0,0,0,0};	// channel pin
-//		Proportional output - PWM		  1 2 3 4 5 6  7  8 //channel
+//		Proportional output - PWM		  1 2 3 4 5 6 7 8 //channel
 const int channelDirectionPIN1[MAX_CHANNELS+1] = {0,A0,6,3,4,7,0,A3,0};	//  channel direction pin 
 //		Used to turn PWM values into on/off	  		1 2 3 4 5 6 7  8	//channel
 const int channelDirectionPIN2[MAX_CHANNELS+1] = {0,A1,5,0,0,0,0,A2,0};	// 2nd channel direction pin 
@@ -131,8 +129,9 @@ const int channelSpecialType[MAX_CHANNELS+1] = {0,4,1,2,3,0,0,5,0};  //type
 //				l - 1 = Turn running lights on when rear lights are on (but nor for brake lights!)
 //				S - 2 = Flash rear running lights with indicator.
 //				S - 3 = Flash rear running lights with indicator.
-//				S - 4 = Front Legs motor control.
-//				S - 5 = Ramp motor control.
+//				S - 4 = Rear Legs control - depends on Front Legs.
+//				S - 5 = Ramp motor control - only works if Rear Legs fully down.
+//								[Replacement for "if (channel = x)" ....]
 
 // ------- Running Lights ------------------
 const int runningLightsFrontPin = 0;		// front running lights - pin# (2 front side & front white marker lights)
@@ -153,8 +152,13 @@ int rearLegsDirection = 0;						// 1 = up, 0 = off, -1 = down
 const int rearLegsRightPin = 8;
 const int rearLegsLeftPin = 12;
 const int rearLegsPulseIncrement = 5;
-int rearLegsLeftPulseLength = 2200;		//value for completely Down		1000 = UP
-int rearLegsRightPulseLength = 900;		//value for completely Down		2100 = UP
+const int rearLegsLeftPulseLengthDown = 2200;	// value for completely Down
+const int rearLegsLeftPulseLengthUp = 1000;		// value for completely Up
+const int rearLegsRightPulseLengthDown = 900;	// value for completely Down
+const int rearLegsRightPulseLengthUp = 2100;	// value for completely Up
+int rearLegsLeftPulseLength = rearLegsLeftPulseLengthDown;		// init value
+int rearLegsRightPulseLength = rearLegsRightPulseLengthDown;		// init value
+const int rearLegsLoopStartValue = 5;			// how many times to issue last setting
 int rearLegsLoopCount = 0;
 
 // ---- Toggle Switches ----- 
@@ -199,24 +203,23 @@ unsigned long tSwitchLED_ThisTime = 0;
 const int PULSE_LENGTH_MIN = 1000;		// min, mid and max pulse lengths
 const int PULSE_LENGTH_MID = 1500;		
 const int PULSE_LENGTH_MAX = 2000;
-const int SWITCH_ON_SETTING = 1800;		//for Switch and Toggle use
-const int SWITCH_OFF_SETTING = 1200;
-const int SWITCH_MID_SETTING_A = 1300;
-const int SWITCH_MID_SETTING_B = 1700;	
+const int SWITCH_ON = 1800;				//for Switch and Toggle use
+const int SWITCH_OFF = 1200;
+const int SWITCH_MID_LOW = 1300;
+const int SWITCH_MID_HIGH = 1700;	
 //const float PWM_MULTIPLIER   = .255;		// convert time (microS) to 0-255 for PWM output
-//									// hard coded as "long( ....... * 255 / 1000) " to make integer arithmetic
+//							// hard coded as "long( ....... * 255 / 1000) " to make integer arithmetic
 
 // -------------------------
 // for output cycles
 //--------------------------
-static volatile int channelTimeCopy[MAX_CHANNELS + 1];			// copy of channel times used to process
-unsigned long channelTimeLimitStart[MAX_CHANNELS + 1];  		//time the channel started for time limit
-static volatile int channelOutTimeStart[MAX_CHANNELS + 1];  	//time the channel started output
-static volatile int tSwitchOutTimeStart[MAX_tSwitch+1];			//time the proportional tSwitch started output
-static volatile int rearLegsOutTimeStart;  				//time the PWM Pulse started 
-unsigned long outputMicrosNow;
-unsigned long outputMicrosDiff;
-unsigned int outChannel = MAX_CHANNELS+10;		// make sure output doesn't start till 1st frame received
+int outChannel = 0;
+
+//#long channelOutTimeStart[MAX_CHANNELS + 1];  	//time the channel started output
+//#static volatile int tSwitchOutTimeStart[MAX_tSwitch+1];			//time the proportional tSwitch started output
+//#static volatile int rearLegsOutTimeStart;  				//time the PWM Pulse started 
+//#unsigned long outputMicrosNow;
+//#unsigned long outputMicrosDiff;
 
 
 // -------------------------
@@ -251,23 +254,24 @@ unsigned long debugCyleStart = 0;
 int debugLongCycleCount = 0;
 int testCycleCount = 0;
 
+//  Emergency restart of sketch!!!!!  Things happen - should never be needed.
+void(* resetSketch) (void) = 0;
 
 // ----------------------------------------------------------
 //for interruptReadFrame (input of frame of channel data)
 //-----------------------------------------------------------
-const int LONGEST_WAIT_FOR_CHANNEL = 3000;  //no more channels coming?  3 milli seconds (could be just > 2!)
+const int LONGEST_WAIT_FOR_CHANNEL = 3000;  	//no more channels coming?  3 milli seconds (could be just > 2!)
 static volatile int channelTime[ MAX_CHANNELS + 1];
-				// array holding channel channelTime width value in microseconds
-static volatile int channelIn = 0;      
-				// number of channels detected so far in the frame (first channel is 1)
-				// channel 0 is used for the length of the inter frame gap at end of frame
-static volatile bool frameAvailable = false; // indicates a new frame of data has arrived
+												// array holding channel channelTime width value in microseconds
+int channelTimeCopy[MAX_CHANNELS + 1];			// copy of channel times used to process
+unsigned long channelTimeLimitStart[MAX_CHANNELS + 1];
+												//time the channel started for time limit
+static volatile int channelIn = 0;				// number of channels detected so far in the frame (first channel is 1)
+												// channel 0 is used for the length of the inter frame gap at end of frame
+static volatile bool frameAvailable = false; 	// indicates a new frame of data has arrived
 static volatile unsigned long nowTime;			//Times for channels in the frame.
 static volatile unsigned long oldTime = 0;
 static volatile unsigned long diffTime = 0;
-
-//  Emergency restart of sketch!!!!!  Things happen - should never be needed.
-void(* resetSketch) (void) = 0;
 
 // -------------------------------
 //		 Input interrupt 
@@ -291,37 +295,6 @@ void interruptReadChannels() {
 	}
 }
 
-static volatile int timerTime;
-static volatile int outputIntDiff;
-// -------------------------------
-//for interrupt Timer (for output)
-//--------------------------------
-ISR(TIMER2_COMPA_vect){ 
-	//interrupt every 40? micro seconds - controlled by constant timerPrecision
-	timerTime = timerTime + timerPrecision;	
-	// -------------------------------------------------------------------
-	// ======== finish processing for all channels still active ==========
-	// -------------------------------------------------------------------
-	for (int i = 1; i <= maxChannels; i++) {
-		if (!(channelTimeCopy[i] < 0)) {							// channel still active if not negative
-			outputIntDiff = timerTime - channelOutTimeStart[i];
-			if (outputIntDiff >= channelTimeCopy[i]) {				// finished?
-				digitalWrite(channelPIN[i], LOW);
-				channelTimeCopy[i] = -outputIntDiff;				// set done
-			}
-		}
-	}
-	if (rearLegsDirection != 0) {								// finish rear legs pulses
-		outputIntDiff = timerTime - rearLegsOutTimeStart;
-		if (outputIntDiff >= rearLegsLeftPulseLength) {			// finished?
-			digitalWrite(rearLegsLeftPin, LOW);
-		}
-		if (outputIntDiff >= rearLegsRightPulseLength) {		// finished?
-			digitalWrite(rearLegsRightPin, LOW);
-		}
-	}
-}
-
 // -------------------------------
 //		Setup
 //--------------------------------
@@ -335,9 +308,15 @@ void setup() {
 
 	for (int i = 1; i <= MAX_CHANNELS; i++){
 		// init the storage for input interrupt routine and its copies
-		channelTime[i] = -2;  // negative = input processed
-		channelTimeCopy[i] = -2; 
-		statusChannelTimeCopy[i] = -2; 
+		if (channelType[i] == "s") {
+			channelTime[i] = PULSE_LENGTH_MIN;
+			channelTimeCopy[i] = PULSE_LENGTH_MIN; 
+			statusChannelTimeCopy[i] = PULSE_LENGTH_MIN;
+		} else {
+			channelTime[i] = PULSE_LENGTH_MID;
+			channelTimeCopy[i] = PULSE_LENGTH_MID; 
+			statusChannelTimeCopy[i] = PULSE_LENGTH_MID; 
+		}
 		// set the output pins (hardware) as needed.
 		if (channelPIN[i] > 0) {
 			pinMode(channelPIN[i], OUTPUT);
@@ -366,7 +345,7 @@ void setup() {
 	//pinMode(runningLightsPin2, OUTPUT);			runningLightsRearRightPin
 	//pinMode(runningLightsPin3, OUTPUT);			runningLightsRearLeftPin
 	
-	for (int i=1; i <= 20; i++) {						// initialise Rear Legs position
+	for (int i=1; i <= 10; i++) {						// initialise Rear Legs position
 		digitalWrite(rearLegsLeftPin, HIGH); 
 		delayMicroseconds(rearLegsLeftPulseLength);
 		digitalWrite(rearLegsLeftPin, LOW); 
@@ -375,30 +354,7 @@ void setup() {
 		digitalWrite(rearLegsRightPin, LOW); 
 		delay(18);
 	}
-	
-	bitWrite(TIMSK2, OCIE2A, 0); // disable interrupt
-	// -- set timer2 interrupt  for interrupt timer - too low and the system locks up so min 40?
-	//  timerPrecision is effectively the number of micro seconds between interupts 
-	//	- too quick and processing doesn't finish!!  but the smaller the better for proportional accuracy.
-	TCCR2A = 0;	// set entire TCCR2A register to 0
-	TCCR2B = 0;	// same for TCCR2B
-	TCNT2  = 0;	//initialize counter value to 0
-		// set compare match register
-		//  OCR2A = 200;  // (must be <256)
-	OCR2A = 2*timerPrecision;	//  2 * 40   (must be <256)
-	TCCR2A |= (1 << WGM21);	// turn on CTC mode
-	TCCR2B |= (1 << CS21);    // Set CS21 bit for 8 prescaler;  22 for 64
-//######################################################################################
-//	Don't enable here so timer doesn't start before first frame available
-//  This was causing timing problem in "frameAvailable" in Loop si init storage and put back here.
-	TIMSK2 |= (1 << OCIE2A);	// enable timer compare interrupt
-		//	TIMSK2 &= ~(1 << OCIE2A);	// disable interrupt
-		// bitWrite(TIMSK2, OCIE2A, 0); // disable interrupt 
-		// bitWrite(TIMSK2, OCIE2A, 1); // enable interrupt 	
-			//byte timmer2Save = TIMSK2;	// save interrupt byte (current situation)
-			//TIMSK2 &= ~(1 << OCIE2A);		// disable interrupt
-			//TIMSK2 = timmer2Save;			// restore interrupt byte (old situation)
-	
+		
 	// Initialise PPM input interrupt system
 	pinMode(inputPin, PPM_INPUT_TYPE);  
 	attachInterrupt(digitalPinToInterrupt(inputPin), interruptReadChannels, PULSE_EDGE);
@@ -421,18 +377,18 @@ void loop() {
 		// first time through for this frame
 		
 		frameAvailable = false;		
-//		delayMicroseconds(channelDelayTimer);		//------ to spread out starts ---------------------------
 		outChannel = 1; 
-		channelTimeCopy[0] = channelTime[0];
-		statusChannelTimeCopy[0] = channelTimeCopy[0];
-//--
+		// make a consistent copy of channel times for processing
+		for (int i=1; i <= MAX_CHANNELS; i++) {
+			channelTimeCopy[i] = channelTime[i];
+			statusChannelTimeCopy[i] = channelTimeCopy[i];
+		}
 //		if (trailerBrakeOn && millis() - trailerBrakeTimeOn > trailerBrakeOnDelay) {	
 													// seeing frames so turn trailer brake OFF after 2 seconds
 //			if (setTrailerBrake(false) && tSwitchValue[MAX_tSwitch-1]) 
 //										Serial.println("##### Trailer Brake Off when frame available"); //Debug on
 //		}			
-//--
-		timerTime = 0;					// reset the time being used in the timer interrupt for next frame.
+
 		//--Monitoring--
 		monLED_CycleCount++;
 		monTimeOfLastCycle = millis();
@@ -440,42 +396,23 @@ void loop() {
 		//--Monitoring--end
 		debugCycleTime = 1000;  // reset debugCycleTime to 1 second 
 								// (set very slow if connection lost (no frames seen)
-		
-		// This caused a problem I think - so init storage (so no problem for output to start early) and move this to setup.
-		//bitWrite(TIMSK2, OCIE2A, 1); 	// enable output timer interrupt  (disabled for startup)
-		//if (!bitRead(TIMSK2, OCIE2A)) bitWrite(TIMSK2, OCIE2A, 1); // enable output timer interrupt if not already (disabled for startup)
-		
-		// ============ Frame Start signal for scope ==========
+		// ==== Frame Start signal for scope (START) ====
 		digitalWrite(frameStartPin, HIGH); 
 		frameStartTime = micros();	
 	}
 	
-	// ============ Frame Start signal for scope (END) ==========
-	if (micros() - frameStartTime > 500) digitalWrite(frameStartPin, LOW);	// controls Frame Start Pulse Length - 2.5mS ish
-
-	monTimeElapse = millis() - monTimeOfLastCycle;  
+	// ==== Frame Start signal for scope (END) ====
+	if (micros() - frameStartTime > 500) digitalWrite(frameStartPin, LOW);	// controls Frame Start Pulse Length - .5mS ish
 
 	// --------------------------------------------------------------
 	// ========    processing for one channel at a time    ==========
 	// --------------------------------------------------------------
 	if (outChannel <= maxChannels) {
-//		Serial.println(timerTime);
-//		delayMicroseconds(channelDelayTimer);		//------ to spread out starts ---------------------------
-		channelTimeCopy[outChannel] = channelTime[outChannel];
 		if (invertChannel[outChannel] == 'I') 		// reverse direction of channel
 					channelTimeCopy[outChannel] = ((-(channelTimeCopy[outChannel] - PULSE_LENGTH_MID))+PULSE_LENGTH_MID); 
 
-		
 		switch (channelType[outChannel]) {
-		// 		set 'output high' on each proportional channel  and set others appropriately
-		//			timing and 'output low' (end of PWM pulse) is done in timer interrupt
-		//  P and S  require a pulse of the correct length output on the pin (proportional channel)
-		//  L requires the output to be set for LED brightness by PWM (not a proportional channel)
-		//  l (lowerCaseL) outputs LED brightness by PWM but using 1/2 input x 2 i.e. whole swing 
-		//																	(direction pin available if needed)
-		//  T  ToggleSwitch - needs a short or long pulse 	UP for control of switch number
-		//													DOWN for on/off control of the switch
-//--------------------
+//----------------
 		case 'L':					// LED from centre
 			//--set direction pin if there is one
 			if (channelDirectionPIN1[outChannel] > 0 && (channelTimeCopy[outChannel]-PULSE_LENGTH_MID) > 0 ) {
@@ -486,8 +423,8 @@ void loop() {
 			if (channelPIN[outChannel] > 0) {
 				//--check for time limit
 				if (channelTimeLimit[outChannel] > 0) {		//is there a limit
-					if (channelTimeCopy[outChannel] > SWITCH_MID_SETTING_A 
-								&& channelTimeCopy[outChannel] < SWITCH_MID_SETTING_B) {  //in centre (off)?
+					if (channelTimeCopy[outChannel] > SWITCH_MID_LOW 
+								&& channelTimeCopy[outChannel] < SWITCH_MID_HIGH) {  //in centre (off)?
 						channelTimeLimitStart[outChannel] = millis();  // init the start time
 					} else {
 						//is limit exceeded
@@ -520,35 +457,35 @@ void loop() {
 			if (channelSpecialType[outChannel] == 1) {
 				//special on if at middle
 				unsigned long localTime = millis();
-				if (channelTimeCopy[outChannel] > SWITCH_MID_SETTING_A 
-							&& channelTimeCopy[outChannel] < SWITCH_MID_SETTING_B) {
+				if (channelTimeCopy[outChannel] > SWITCH_MID_LOW 
+							&& channelTimeCopy[outChannel] < SWITCH_MID_HIGH) {
 					digitalWrite(channelDirectionPIN2[outChannel], HIGH);  // set on
 //					if (localTime - runningLightsFlashStart > 2000) digitalWrite(runningLightsPin1, HIGH);  // set on
 //					if (localTime - turnLeftStart > 500) digitalWrite(runningLightsPin2, HIGH);  // set on
 //					if (localTime - turnRightStart > 500) digitalWrite(runningLightsPin3, HIGH);  // set on
 				} 
 				//special off if at low  (can't use an "else" here - channel has 3 positions)
-				if (channelTimeCopy[outChannel] < SWITCH_OFF_SETTING) {
+				if (channelTimeCopy[outChannel] < SWITCH_OFF) {
 					digitalWrite(channelDirectionPIN2[outChannel], LOW);  // set off
 //					if (localTime - runningLightsFlashStart > 2000) digitalWrite(runningLightsPin1, LOW);  // set off
 //					digitalWrite(runningLightsPin2, LOW);  // set off
 //					digitalWrite(runningLightsPin3, LOW);  // set off
 				}
-				if (channelTimeCopy[outChannel] > SWITCH_ON_SETTING) {
+				if (channelTimeCopy[outChannel] > SWITCH_ON) {
 					digitalWrite(channelDirectionPIN1[outChannel], HIGH);  // set on
 				} 
 				//special off if at low  (can't use an "else" here - channel has 3 positions)
-				if (!channelTimeCopy[outChannel] > SWITCH_ON_SETTING) {
+				if (!channelTimeCopy[outChannel] > SWITCH_ON) {
 					digitalWrite(channelDirectionPIN1[outChannel], LOW);  // set off
 				}
 			}
 			if (channelPIN[outChannel] > 0) {
 				//direction is not relevant 
-				//		[- could be off/low or on/high (if >PULSE_LENGTH_MIN or >SWITCH_ON_SETTING)]
+				//		[- could be off/low or on/high (if >PULSE_LENGTH_MIN or >SWITCH_ON)]
 				//--check for time limit
 				if (channelTimeLimit[outChannel] > 0) {		//is there a limit
-					if (channelTimeCopy[outChannel] > SWITCH_MID_SETTING_A 
-							&& channelTimeCopy[outChannel] < SWITCH_MID_SETTING_B) {  //in centre (off)?
+					if (channelTimeCopy[outChannel] > SWITCH_MID_LOW 
+							&& channelTimeCopy[outChannel] < SWITCH_MID_HIGH) {  //in centre (off)?
 						channelTimeLimitStart[outChannel] = millis();  // init the start time
 					} else {
 						//is limit exceeded
@@ -562,10 +499,10 @@ void loop() {
 					channelTimeCopy[outChannel] = PULSE_LENGTH_MIN + (channelRateLimit[outChannel]*2); // limit rate
 				}
 				// force to max / min if close
-				if (channelTimeCopy[outChannel] < SWITCH_OFF_SETTING) {
+				if (channelTimeCopy[outChannel] < SWITCH_OFF) {
 					channelTimeCopy[outChannel] = PULSE_LENGTH_MIN;
 				}
-				if (channelTimeCopy[outChannel] > SWITCH_ON_SETTING) {
+				if (channelTimeCopy[outChannel] > SWITCH_ON) {
 					channelTimeCopy[outChannel] = PULSE_LENGTH_MAX;
 					digitalWrite(channelPIN[outChannel]-1, HIGH);  // set on
 				} else {
@@ -581,8 +518,8 @@ void loop() {
 		case 'P':					//proportional
 			//--set direction pin						
 			if (channelDirectionPIN1[outChannel] > 0 
-							&& channelTimeCopy[outChannel] > SWITCH_MID_SETTING_A 
-							&& channelTimeCopy[outChannel] < SWITCH_MID_SETTING_B) {
+							&& channelTimeCopy[outChannel] > SWITCH_MID_LOW 
+							&& channelTimeCopy[outChannel] < SWITCH_MID_HIGH) {
 				digitalWrite(channelDirectionPIN1[outChannel], HIGH);// direction on
 			} else {
 				digitalWrite(channelDirectionPIN1[outChannel], LOW);// direction off
@@ -599,8 +536,8 @@ void loop() {
 //				}
 				//--check for time limit
 				if (channelTimeLimit[outChannel] > 0) {		//is there a limit
-					if (channelTimeCopy[outChannel] > SWITCH_MID_SETTING_A 
-								&& channelTimeCopy[outChannel] < SWITCH_MID_SETTING_B) {  //in centre (off)?
+					if (channelTimeCopy[outChannel] > SWITCH_MID_LOW 
+								&& channelTimeCopy[outChannel] < SWITCH_MID_HIGH) {  //in centre (off)?
 						channelTimeLimitStart[outChannel] = millis();  // init the start time
 					} else {	// not in centre (off)
 						if (millis()-channelTimeLimitStart[outChannel] > channelTimeLimit[outChannel]) {	// is limit exceeded
@@ -629,7 +566,7 @@ void loop() {
 				if (channelTimeCopy[outChannel] < PULSE_LENGTH_MID - channelRateLimit[outChannel]) {
 					channelTimeCopy[outChannel] = PULSE_LENGTH_MID - channelRateLimit[outChannel];    // limit rate
 				}
-				channelOutTimeStart[outChannel] = timerTime;
+//				channelOutTimeStart[outChannel] = timerTime;
 				digitalWrite(channelPIN[outChannel], HIGH);  //(proportional output (i.e. time based))
 				statusChannelTimeCopy[outChannel] = channelTimeCopy[outChannel]; // copy data for debug/status output
 			} else {
@@ -639,34 +576,30 @@ void loop() {
 			break;
 //----------------
 		case 'S':	//	Switch - Low / Off / High
-					//main diff to P is output forced to HIGH, MID, LOW
-
-			if (channelTimeCopy[outChannel] < SWITCH_OFF_SETTING) {
+			if (channelTimeCopy[outChannel] < SWITCH_OFF) {
 				channelTimeCopy[outChannel] = PULSE_LENGTH_MIN;
-			} else if (channelTimeCopy[outChannel] > SWITCH_ON_SETTING) {
+			} else if (channelTimeCopy[outChannel] > SWITCH_ON) {
 				channelTimeCopy[outChannel] = PULSE_LENGTH_MAX;
 			} else {
 				channelTimeCopy[outChannel] = PULSE_LENGTH_MID;
 			}
-//========================================================================
-//  put special type processing here - (no channel and no direction means just this processing.)
-//========================================================================
-			// processing for ramp motor
-			if (channelSpecialType[outChannel] == 5 && rearLegsLeftPulseLength < 2200) {	// rear legs NOT fully down
-				channelTimeCopy[outChannel] = PULSE_LENGTH_MID; 	// mid point to switch off ramp movement
-			}
-			
+			//===================================
+			//  put special type processing here
+			//===================================
+			// processing for rear legs if front legs moving (4).
 			if (channelSpecialType[outChannel] == 4) {
 				rearLegsDirection = 0;
-				if (channelTimeCopy[outChannel] == PULSE_LENGTH_MAX) rearLegsDirection = 1;	// up
+				if (channelTimeCopy[outChannel] == PULSE_LENGTH_MAX) rearLegsDirection = 1;		// up
 				if (channelTimeCopy[outChannel] == PULSE_LENGTH_MIN) rearLegsDirection = -1;	// down
 			}
-
-
+			// processing for ramp motor (5) - only move ramp if rear legs fully down
+			if (channelSpecialType[outChannel] == 5 && rearLegsLeftPulseLength < rearLegsLeftPulseLengthDown) {	// rear legs NOT fully down
+				channelTimeCopy[outChannel] = PULSE_LENGTH_MID; 	// set mid point to switch off ramp movement
+			}
+			
 			// --use direction pin as control
-			if (channelDirectionPIN1[outChannel] > 0) {
+			if (channelDirectionPIN1[outChannel] > 0) { 
 				if (channelTimeCopy[outChannel] == PULSE_LENGTH_MAX) {
-//					if (!digitalRead(channelDirectionPIN1[outChannel])) digitalWrite(channelDirectionPIN1[outChannel], HIGH); //on
 					digitalWrite(channelDirectionPIN1[outChannel], HIGH); //on
 //					// --- Special Type 2&3 ---
 //					if (channelSpecialType[outChannel] == 2) {
@@ -678,7 +611,6 @@ void loop() {
 //						turnRightStart = millis();
 //					}
 				} else {
-//					if (digitalRead(channelDirectionPIN1[outChannel])) digitalWrite(channelDirectionPIN1[outChannel], LOW); //off
 					digitalWrite(channelDirectionPIN1[outChannel], LOW); //off
 					// --- Special Type 2&3 ---
 //					if (channelSpecialType[outChannel] == 2) {
@@ -696,17 +628,12 @@ void loop() {
 					digitalWrite(channelDirectionPIN2[outChannel], LOW); //off
 				}
 			}
-			
-//========================================================================
-//  put special type processing here - (no channel and no direction means just this processing.)
-//========================================================================
-
 
 			if (channelPIN[outChannel] > 0) {
 				//--check for time limit
 				if (channelTimeLimit[outChannel] > 0) {		//is there a limit
-					if (channelTimeCopy[outChannel] > SWITCH_MID_SETTING_A 
-							&& channelTimeCopy[outChannel] < SWITCH_MID_SETTING_B) {  //in centre (off)?
+					if (channelTimeCopy[outChannel] > SWITCH_MID_LOW 
+							&& channelTimeCopy[outChannel] < SWITCH_MID_HIGH) {  //in centre (off)?
 						channelTimeLimitStart[outChannel] = millis();  // init the start time
 					} else {
 						//is limit exceeded
@@ -723,30 +650,29 @@ void loop() {
 					channelTimeCopy[outChannel] = PULSE_LENGTH_MID - channelRateLimit[outChannel];    // limit rate
 				}
 				//			channelOutTimeStart[outChannel] = micros();	
-				channelOutTimeStart[outChannel] = timerTime;
+//				channelOutTimeStart[outChannel] = timerTime;
 				digitalWrite(channelPIN[outChannel], HIGH);  //(proportional output (i.e. time based))
 				statusChannelTimeCopy[outChannel] = channelTimeCopy[outChannel]; // copy data for debug/status output
 			} else {
 				statusChannelTimeCopy[outChannel] = channelTimeCopy[outChannel]; // copy data for debug/status output
 				channelTimeCopy[outChannel] = -'S';	// channel not in use
 			}
-		break;
+			break;
 		
 //----------------
 		case 's':	//switch - Off / Mid / High
-					//main diff to P is output forced to LOW, MID, HIGH
 
-			if (channelTimeCopy[outChannel] < SWITCH_OFF_SETTING) {
+			if (channelTimeCopy[outChannel] < SWITCH_OFF) {
 				channelTimeCopy[outChannel] = PULSE_LENGTH_MIN;
-			} else if (channelTimeCopy[outChannel] > SWITCH_ON_SETTING) {
+			} else if (channelTimeCopy[outChannel] > SWITCH_ON) {
 				channelTimeCopy[outChannel] = PULSE_LENGTH_MAX;
 			} else {
 				channelTimeCopy[outChannel] = PULSE_LENGTH_MID;
 			}
 
-
 			// --use direction pin as control
 			if (channelDirectionPIN1[outChannel] > 0) {
+				// this makes rear lights stay on when brake lights come on and go off - don't make into else like pin2!
 				if (channelTimeCopy[outChannel] == PULSE_LENGTH_MID) digitalWrite(channelDirectionPIN1[outChannel], HIGH); //on
 				if (channelTimeCopy[outChannel] == PULSE_LENGTH_MIN) digitalWrite(channelDirectionPIN1[outChannel], LOW); //off
 			}
@@ -761,8 +687,8 @@ void loop() {
 			if (channelPIN[outChannel] > 0) {
 				//--check for time limit
 				if (channelTimeLimit[outChannel] > 0) {		//is there a limit
-					if (channelTimeCopy[outChannel] > SWITCH_MID_SETTING_A 
-							&& channelTimeCopy[outChannel] < SWITCH_MID_SETTING_B) {  //in centre (off)?
+					if (channelTimeCopy[outChannel] > SWITCH_MID_LOW 
+							&& channelTimeCopy[outChannel] < SWITCH_MID_HIGH) {  //in centre (off)?
 						channelTimeLimitStart[outChannel] = millis();  // init the start time
 					} else {
 						//is limit exceeded
@@ -779,7 +705,7 @@ void loop() {
 					channelTimeCopy[outChannel] = PULSE_LENGTH_MID - channelRateLimit[outChannel];    // limit rate
 				}
 				//			channelOutTimeStart[outChannel] = micros();	
-				channelOutTimeStart[outChannel] = timerTime;
+//				channelOutTimeStart[outChannel] = timerTime;
 				digitalWrite(channelPIN[outChannel], HIGH);  //(proportional output (i.e. time based))
 				statusChannelTimeCopy[outChannel] = channelTimeCopy[outChannel]; // copy data for debug/status output
 			} else {
@@ -789,15 +715,15 @@ void loop() {
 			break;
 //----------------
 		case 'T':					//Toggle switch
-			if (tSwitchTimerStartOFF == 0 && channelTimeCopy[outChannel] <= SWITCH_OFF_SETTING) {	// start OFF timmer
+			if (tSwitchTimerStartOFF == 0 && channelTimeCopy[outChannel] <= SWITCH_OFF) {	// start UP timmer
 				tSwitchTimerStartOFF = millis();
-				tSwitchTimerStartON = 0;		// empty ON timmer!
+				tSwitchTimerStartON = 0;		// empty DOWN timmer!
 			} 
-			if (tSwitchTimerStartON == 0 && channelTimeCopy[outChannel] >= SWITCH_ON_SETTING) {		// start ON timmer
+			if (tSwitchTimerStartON == 0 && channelTimeCopy[outChannel] >= SWITCH_ON) {		// start DOWN timmer
 				tSwitchTimerStartON = millis();	
-				tSwitchTimerStartOFF = 0;		// empty OFF timmer!
+				tSwitchTimerStartOFF = 0;		// empty UP timmer!
 			} 
-			if (channelTimeCopy[outChannel] > SWITCH_MID_SETTING_A && channelTimeCopy[outChannel] < SWITCH_MID_SETTING_B) {
+			if (channelTimeCopy[outChannel] > SWITCH_MID_LOW && channelTimeCopy[outChannel] < SWITCH_MID_HIGH) {
 				channelTimeCopy[outChannel] = PULSE_LENGTH_MID;								// force mid point for switch
 			} 
 			tSwitchTimerNow = millis();
@@ -809,17 +735,18 @@ void loop() {
 				} else {																// long UP = reset switch counter
 					tSwitchNo = 1;
 				}
-				tSwitchTimerStartOFF = 0;							// empty OFF timmer!
+				tSwitchTimerStartOFF = 0;							// empty UP timmer!
 			} 
 
 			//  ---- Switch Value ----
 			if (tSwitchTimerStartON > 0 && channelTimeCopy[outChannel] == PULSE_LENGTH_MID) {	
-																						// switch pulsed ON
+																					// switch pulsed DOWN
 				// #########  Switch Type = 1  ########
-				if (tSwitchType[tSwitchNo] == 1 || tSwitchType[tSwitchNo] == 3) {			// switch type 1 = toggle on/off (and count to 3)
-					if (tSwitchTimerNow - tSwitchTimerStartON < tSwitchSetTime) {	// short ON = toggle
+				if (tSwitchType[tSwitchNo] == 1 || tSwitchType[tSwitchNo] == 3) {	//switch type 1 = toggle on/off 
+																					//switch type 3 = toggle on (to 3)/off	
+					if (tSwitchTimerNow - tSwitchTimerStartON < tSwitchSetTime) {	// short DOWN = toggle
 						if (tSwitchValue[tSwitchNo]) {							// value on?
-							if (tSwitchNo == MAX_tSwitch-1 || tSwitchNo == 3) {	// (switch 3 for testing mechanism!)
+							if (tSwitchNo == MAX_tSwitch-1 || tSwitchNo == 3) {	// (switch 3 added for testing mechanism!)
 								if (tSwitchValue[tSwitchNo] == 3) {
 									tSwitchValue[tSwitchNo] = 0;
 								} else {
@@ -833,8 +760,8 @@ void loop() {
 							tSwitchValue[tSwitchNo] = 1;
 							if (tSwitchPIN[tSwitchNo]) digitalWrite(tSwitchPIN[tSwitchNo], HIGH);  // set ON
 						}
-					} else {														// long ON  = turn OFF  ???????????????
-						//tSwitchValue[tSwitchNo] = 0;								//			now used in tractor - gearbox control
+					} else {														// long DOWN  = turn OFF
+						//tSwitchValue[tSwitchNo] = 0;			//	****  now used for tractor gearbox control switch ****
 						//if (tSwitchPIN[tSwitchNo]) digitalWrite(tSwitchPIN[tSwitchNo], LOW);   	// set OFF
 					}
 				}
@@ -851,7 +778,7 @@ void loop() {
 					}
 //					delayMicroseconds(channelDelayTimer);		//------ to spread out starts ---------------------------
 					// output to be high - proportional output (i.e. time based)
-					tSwitchOutTimeStart[tSwitchNo] = timerTime;
+//					tSwitchOutTimeStart[tSwitchNo] = timerTime;
 					digitalWrite(tSwitchPIN[tSwitchNo], HIGH);
 				}
 				if (tSwitchType[tSwitchNo] == 11) {			// switch type 11 = Proportional output,  high/low
@@ -866,7 +793,7 @@ void loop() {
 					}
 //					delayMicroseconds(channelDelayTimer);		//------ to spread out starts ---------------------------
 					// output to be high - proportional output (i.e. time based)
-					tSwitchOutTimeStart[tSwitchNo] = timerTime;
+//					tSwitchOutTimeStart[tSwitchNo] = timerTime;
 					digitalWrite(tSwitchPIN[tSwitchNo], HIGH);
 				}
 				if (tSwitchType[tSwitchNo] == 12) {			// switch type 12 = Proportional output,  high/mid/low
@@ -884,7 +811,7 @@ void loop() {
 					}
 //					delayMicroseconds(channelDelayTimer);		//------ to spread out starts ---------------------------
 					// output to be high - proportional output (i.e. time based)
-					tSwitchOutTimeStart[tSwitchNo] = timerTime;
+//					tSwitchOutTimeStart[tSwitchNo] = timerTime;
 					digitalWrite(tSwitchPIN[tSwitchNo], HIGH);
 				}
 				if (tSwitchType[tSwitchNo] == 13) {			// switch type 13 = Proportional output,  high/mid only
@@ -899,10 +826,10 @@ void loop() {
 					}
 //					delayMicroseconds(channelDelayTimer);		//------ to spread out starts ---------------------------
 					// output to be high - proportional output (i.e. time based)
-					tSwitchOutTimeStart[tSwitchNo] = timerTime;
+//					tSwitchOutTimeStart[tSwitchNo] = timerTime;
 					digitalWrite(tSwitchPIN[tSwitchNo], HIGH);
 				}				
-				tSwitchTimerStartON = 0;		// empty on timmer!
+				tSwitchTimerStartON = 0;		// empty on timer!
 			}
 			statusChannelTimeCopy[outChannel] = channelTimeCopy[outChannel]; // copy data for debug/status output
 			channelTimeCopy[outChannel] = -'T';			// channel dealt with set negative
@@ -910,70 +837,51 @@ void loop() {
 						
 			
 		}
-//		statusChannelTimeCopy[outChannel] = channelTimeCopy[outChannel];		// copy data for debug/status output
-
 		outChannel++;					// inc. channel being processed for output.
-										// will do this for each channel - 1 at a time to allow finished processing below!
 
-
-		if  (outChannel > maxChannels) {
-			// process rear legs/jacks
+		if  (outChannel > maxChannels) {		// finish processing if required
+			// process rear legs
 			// Move rear legs to up position (SLOWLY) - one step at a time here.
 			//Need to write a pulse to servo channels  -  longer/shorter pulse than last time.
-			
-/*
-			Serial.print("Legs Direction: ");
-			Serial.print(rearLegsDirection);
-			Serial.print(",   Rear Legs Left: ");
-			Serial.print(rearLegsLeftPulseLength);
-			Serial.print(",   Rear Legs Right:");
-			Serial.print(rearLegsRightPulseLength);
-			Serial.println(".");
-*/
+			//const int rearLegsLeftPulseLengthDown = 2200;	// value for completely Down		1000 = UP
+			//const int rearLegsRightPulseLengthDown = 900;	// value for completely Down		2100 = UP
 
 
 			if (rearLegsDirection == 1) {		//UP
-				if (rearLegsRightPulseLength >= 2100) {
+				if (rearLegsRightPulseLength >= rearLegsRightPulseLengthUp) {
 					if (rearLegsLoopCount <= 0) {
 						rearLegsDirection = 0;
 					} else {
 						rearLegsLoopCount = rearLegsLoopCount - 1;
 					}
 				} else {
-					rearLegsLoopCount = 5;
+					rearLegsLoopCount = rearLegsLoopStartValue;
 					rearLegsRightPulseLength = rearLegsRightPulseLength + rearLegsPulseIncrement;
-					rearLegsLeftPulseLength = 3100 - rearLegsRightPulseLength;
+					rearLegsLeftPulseLength = (rearLegsLeftPulseLengthUp+rearLegsRightPulseLengthUp) - rearLegsRightPulseLength;
 				}
 			}
 			if (rearLegsDirection == -1) {		//DOWN
-				if (rearLegsLeftPulseLength >= 2200) {
+				if (rearLegsLeftPulseLength >= rearLegsLeftPulseLengthDown) {
 					if (rearLegsLoopCount <= 0) {
 						rearLegsDirection = 0;
 					} else {
 						rearLegsLoopCount = rearLegsLoopCount - 1;
 					}
 				} else {
-					rearLegsLoopCount = 5;
+					rearLegsLoopCount = rearLegsLoopStartValue;
 					rearLegsLeftPulseLength = rearLegsLeftPulseLength + rearLegsPulseIncrement;
-					rearLegsRightPulseLength = 3100 - rearLegsLeftPulseLength;
+					rearLegsRightPulseLength = (rearLegsLeftPulseLengthDown+rearLegsRightPulseLengthDown) - rearLegsLeftPulseLength;
 				}
 			}
 			if (rearLegsDirection != 0) {
 				// write pulse
-				rearLegsOutTimeStart = timerTime;
 				digitalWrite(rearLegsLeftPin, HIGH); 
-				digitalWrite(rearLegsRightPin, HIGH); 
-
+				delayMicroseconds(rearLegsLeftPulseLength);
+				digitalWrite(rearLegsLeftPin, LOW); 
 				
-/*				
-				Serial.print("Legs Direction: ");
-				Serial.print(rearLegsDirection);
-				Serial.print(",   Rear Legs Left: ");
-				Serial.print(rearLegsLeftPulseLength);
-				Serial.print(",   Rear Legs Right:");
-				Serial.print(rearLegsRightPulseLength);
-				Serial.println(".");
-*/
+				digitalWrite(rearLegsRightPin, HIGH); 
+				delayMicroseconds(rearLegsRightPulseLength);
+				digitalWrite(rearLegsRightPin, LOW); 
 			}
 
 		}
@@ -982,6 +890,8 @@ void loop() {
 	// ----------------------------------------------------------------------
 	// --  Monitoring  --
 	// ----------------------------------------------------------------------
+
+	monTimeElapse = millis() - monTimeOfLastCycle;
 
 	// No input for 0.5	sec (some frames seen)
 	if (mon0 && monLED_CycleCount > 50 && (monTimeElapse) > 500) {  // 50 frames seen + 0.5 sec 
@@ -1142,26 +1052,51 @@ void loop() {
 				// All sorts starts here to show battery low.
 				detachInterrupt(digitalPinToInterrupt(inputPin));	// turn off input
 				bitWrite(TIMSK2, OCIE2A, 0);	// disable output timer
+				
+	//  Turn things off!!!
+				// ------------------------------------------
+				// ---- Reset some stuff if input lost!! ----
+				//-------------------------------------------
+				for (int i = 1; i <= maxChannels; i++){
+					if (channelPIN[i] > 0) {
+						digitalWrite(channelPIN[i], LOW); 
+					}
+					if (channelDirectionPIN1[i] > 0) {
+						digitalWrite(channelDirectionPIN1[i], LOW); 
+					}
+					if (channelDirectionPIN2[i] > 0) {
+						digitalWrite(channelDirectionPIN2[i], LOW); 
+					}
+				}
+				for (int i = 1; i <= MAX_tSwitch; i++){
+					if (tSwitchPIN[i] > 0) {
+						digitalWrite(tSwitchPIN[i], LOW); 
+					}
+				} 
+
 				for (int i=0; i<2000; i++) {
+					digitalWrite(5, HIGH);	// Rear/Stop Lights
 					digitalWrite(6, HIGH);	// Rear/Stop Lights
-					digitalWrite(8, HIGH);	// Indicator Lights
-					digitalWrite(9, HIGH);	// Indicator Lights
-					digitalWrite(7, HIGH);	// Front Runnin Lights
+					digitalWrite(3, HIGH);	// Indicator Lights
+					digitalWrite(4, HIGH);	// Indicator Lights
+					//digitalWrite(7, HIGH);	// Front Runnin Lights
 					delay(100);
+					digitalWrite(5, LOW);	// Rear/Stop Lights
 					digitalWrite(6, LOW);	// Rear/Stop Lights
-					digitalWrite(8, LOW);	// Indicator Lights
-					digitalWrite(9, LOW);	// Indicator Lights
-					digitalWrite(7, LOW);	// Front Runnin Lights
+					digitalWrite(3, LOW);	// Indicator Lights
+					digitalWrite(4, LOW);	// Indicator Lights
+					//digitalWrite(7, LOW);	// Front Runnin Lights
 					delay(200);
 				}			
 			}
 			if (tSwitchValue[MAX_tSwitch-1] >= 1) {
-				//Serial.print("Legs position value: "); 
-				//Serial.println(analogRead(legsSensorPin)); 
-
-				//Serial.print("--Power reading count: ");
-				//Serial.print(monPowerReadingCount);
-				//Serial.print("  ");
+				Serial.print("----Rear Legs values: "); 
+				Serial.print(rearLegsLeftPulseLength); 
+				Serial.print(" & ");
+				Serial.println(rearLegsRightPulseLength); 
+				Serial.print("--Power reading count: ");
+				Serial.print(monPowerReadingCount);
+				Serial.print("; ");
 				Serial.print("Power reading value: ");
 				Serial.println(monPowerReadingValue);
 			}
