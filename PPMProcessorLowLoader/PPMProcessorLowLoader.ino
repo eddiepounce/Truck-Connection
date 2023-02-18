@@ -152,9 +152,9 @@ int rearLegsDirection = 0;						// 1 = up, 0 = off, -1 = down
 const int rearLegsRightPin = 8;
 const int rearLegsLeftPin = 12;
 const int rearLegsPulseIncrement = 5;
-const int rearLegsLeftPulseLengthDown = 2200;	// value for completely Down
+const int rearLegsLeftPulseLengthDown = 1800;	// value for completely Down  (2200 max)
 const int rearLegsLeftPulseLengthUp = 1000;		// value for completely Up
-const int rearLegsRightPulseLengthDown = 900;	// value for completely Down
+const int rearLegsRightPulseLengthDown = 1300;	// value for completely Down  (900 min)
 const int rearLegsRightPulseLengthUp = 2100;	// value for completely Up
 int rearLegsLeftPulseLength = rearLegsLeftPulseLengthDown;		// init value
 int rearLegsRightPulseLength = rearLegsRightPulseLengthDown;		// init value
@@ -593,7 +593,7 @@ void loop() {
 				if (channelTimeCopy[outChannel] == PULSE_LENGTH_MIN) rearLegsDirection = -1;	// down
 			}
 			// processing for ramp motor (5) - only move ramp if rear legs fully down
-			if (channelSpecialType[outChannel] == 5 && rearLegsLeftPulseLength < rearLegsLeftPulseLengthDown) {	// rear legs NOT fully down
+			if (channelSpecialType[outChannel] == 5 && rearLegsLeftPulseLength < rearLegsLeftPulseLengthDown) {	
 				channelTimeCopy[outChannel] = PULSE_LENGTH_MID; 	// set mid point to switch off ramp movement
 			}
 			
@@ -870,7 +870,8 @@ void loop() {
 				} else {
 					rearLegsLoopCount = rearLegsLoopStartValue;
 					rearLegsLeftPulseLength = rearLegsLeftPulseLength + rearLegsPulseIncrement;
-					rearLegsRightPulseLength = (rearLegsLeftPulseLengthDown+rearLegsRightPulseLengthDown) - rearLegsLeftPulseLength;
+					rearLegsRightPulseLength = (rearLegsLeftPulseLengthUp+rearLegsRightPulseLengthUp) - rearLegsLeftPulseLength;
+												// Use Up numbers as Down end point can be changed.
 				}
 			}
 			if (rearLegsDirection != 0) {
