@@ -72,7 +72,7 @@ enableInterrupt(inputPin, interruptReadChannels, PULSE_EDGE);
 */
 
 #include <Arduino.h>
-int inDelay = 0;
+
 // -------------------------
 //  Constants and variables to control functionality
 //--------------------------
@@ -112,28 +112,28 @@ const int ctrlSideLights = A4;
 const int cameraControlPin = 7;			// Selects forward or reverse camera
 const int cameraPowerPin = A5;				// Power control for cameras
 const int throttlePin = 8;					// Throttle monitoring pin
-const int throttleReverseValue = 600;		// if more - set motion to Reverse
-const int throttleForwardValue = 450;		// if less - set motion to Forward
+const int throttleReverseValue = 550;		// if more - set motion to Reverse  // for camera
+const int throttleForwardValue = 450;		// if less - set motion to Forward  // for camera
 volatile static unsigned long throttleStartTime = 0;
 //		used to store a time (micros) during input for pin change interrupt
 volatile static int throttleValue = 500;	// initial value - mid point
 volatile static bool throttleState = LOW;
 bool braked = false;			// have we braked after going forward?
 bool reversing = false;			// are we now reversing?
-const int ctrlCabLightingPin = 9;				// turns cab lighting on/off
-const int gearboxFromMFUPin = 10;				// PWM from MFU to feed to gearbox servo
-const int gearboxServoPin = 11;					// PWM to Gearbox Servo
+const int ctrlCabLightingPin = 9;			// turns cab lighting on/off
+const int gearboxFromMFUPin = 10;			// PWM from MFU to feed to gearbox servo
+const int gearboxServoPin = 11;				// PWM to Gearbox Servo
 int gearboxGear = 2;
 int gearboxGearOld = 0;
 int gearboxPulseCount = 20;						// controls output to servo and number of pulses to send
 volatile static unsigned long gearboxStartTime = 0;
 //		used to store a time (micros) during input for pin change interrupt
 volatile static int gearboxFromMFUValue = 500;			// initial value - mid point
-volatile static bool gearboxFromMFUState = LOW;
+volatile static bool gearboxFromMFUState = LOW;		// store last value for timing input
 
 volatile static unsigned long switchStartTime = 0;	// channelPIN[7] = A0
 //		used to store a time (micros) during input for pin change interrupt
-bool gearboxControlToggle = HIGH;
+bool gearboxControlToggle = HIGH;			//LOW == stick; HIGH == switch;
 unsigned long tSwitchDownTimerStart = 0;
 unsigned long tSwitchTimerNow = 0;
 
@@ -328,7 +328,7 @@ void loop() {
 
 		// =========== Gearbox Control =============	
 			// decide if stick or switch being used for Gearbox control
-			// channel 6 switch - hold down (high) for 3 seconds to toggle
+			// channel 6 switch - hold down (high) for >2 seconds to toggle
 			// gearboxControlToggle = LOW == stick; HIGH == switch;
 		
 		tSwitchTimerNow = millis();
@@ -345,7 +345,7 @@ void loop() {
 			tSwitchDownTimerStart = 0;					// reset down timmer
 		}
 
-		if (gearboxControlToggle) {					//true - gearboxControlToggle = high = useing switch
+		if (gearboxControlToggle) {					//true - gearboxControlToggle = HIGH = using switch
 			if (frameData[7] < propOffSetting) {			// Code if switch being used
 				gearboxGear = 1;
 			} else if (frameData[7] > propOnSetting) {
@@ -366,31 +366,16 @@ void loop() {
 			gearboxPulseCount = 0;
 			gearboxGearOld = gearboxGear;
 		}
-		if (gearboxPulseCount < 17) {		// use a numer 1 less that divisible by 3.
-			if (throttleValue > throttleReverseValue || throttleValue < throttleForwardValue) gearboxPulseCount += 1;
-//			gearboxPulseCount += 1;
-			digitalWrite(gearboxServoPin, HIGH); 
-			
-			
-			if (inDelay == 0) {
-	//			delayMicroseconds(500 + (gearboxGear * 500));		// this should be correct
-	//			delayMicroseconds(400 + (gearboxGear * 550));		//  950, 1500, 2050.
-				if (gearboxGear == 3) {
-					if (gearboxPulseCount % 3 != 0) {
-						delayMicroseconds(2000);
-					} else {
-						delayMicroseconds(1700);
-					}
-				} else {
-					delayMicroseconds(500 + (gearboxGear * 500));
-				}
-	
-			} else {
-				delayMicroseconds(inDelay);
+		// Put into new gear if throttle open or if going to 2nd gear
+		if (gearboxPulseCount < 10) {
+//			if (throttleValue > throttleReverseValue || throttleValue < throttleForwardValue || gearboxGear == 2) {
+				// because motor doesn't turn till quite a way off neutral, throttleValue 's are as follows
+			if ((throttleValue > 750 && reversing) || (throttleValue < 300) || gearboxGear == 2) {
+				gearboxPulseCount += 1;
+				digitalWrite(gearboxServoPin, HIGH); 
+				delayMicroseconds(500 + (gearboxGear * 500));
+				digitalWrite(gearboxServoPin, LOW); 
 			}
-
-
-			digitalWrite(gearboxServoPin, LOW); 
 		}
 		
 		
@@ -399,15 +384,15 @@ void loop() {
 			// cameraControlPin - controlled by monitoring Throttle
 		if (throttleValue > throttleReverseValue) {
 			if (reversing) {
-				digitalWrite(cameraControlPin, HIGH);	// rear camera
-				digitalWrite(ctrlCabLightingPin, LOW);			// moving so cab light off
+				digitalWrite(cameraControlPin, HIGH);		// rear camera
+				digitalWrite(ctrlCabLightingPin, LOW);		// moving so cab light off
 				digitalWrite(cameraPowerPin, HIGH);			// and cameras on
 				if (debugMode) {
 					Serial.print(" Reversing. Throttle value: ");
 					Serial.println(throttleValue);
 				}
 			} else {
-				braked = true;			// means camera dosn't change if just braking.
+				braked = true;			// camera doesn't change if just braking.
 			}
 		}
 		if (throttleValue < throttleReverseValue and braked == true) {
@@ -494,15 +479,7 @@ void loop() {
 			if (monSerialRead == "1") {gearboxGear = 1; gearboxPulseCount = 0;}
 			if (monSerialRead == "2") {gearboxGear = 2; gearboxPulseCount = 0;}
 			if (monSerialRead == "3") {gearboxGear = 3; gearboxPulseCount = 0;}
-			
-			if (monSerialRead.toInt() > 900 && monSerialRead.toInt() < 2100) {
-				inDelay = monSerialRead.toInt();
-				gearboxPulseCount = 0;
-				Serial.print("inDelay: ");
-				Serial.println(inDelay);
-			}
-			if (monSerialRead == "0") {inDelay = 0; gearboxGear = 2; gearboxPulseCount = 0;}
-			
+						
 			if (monSerialRead == "DebugON" || monSerialRead == "d") {
 				Serial.println("Debug is now turned on");
 				debugMode = true;
