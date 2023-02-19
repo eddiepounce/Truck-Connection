@@ -112,10 +112,10 @@ const int channelPIN[MAX_CHANNELS+1] = {0,A4,6,0,0,0,0,0,0};	// channel pin
 //		Proportional output - PWM		   1 2 3 4 5 6  7  8 //channel
 const int channelDirectionPIN[MAX_CHANNELS+1] = {0,0,0,9,8,11,0,0,0};	// direction of channel pin 
 //		Used for lights - turn PWM into on/off	   1 2 3 4  5 6 7 8	//channel
-const int channelTimeLimit[MAX_CHANNELS+1] = {0,4500,0,0,0,0,0,0,0};		//millis (1000 = 1 second)
+const int channelTimeLimit[MAX_CHANNELS+1] = {0,3000,0,0,0,0,0,0,0};		//millis (1000 = 1 second)
 //const int channelTimeLimit[MAX_CHANNELS+1] = {0,0,0,0,0,0,0,0,0};
 //		How long channel can stay not centered	   1 2 3 4 5 6 7 8 //channel
-const int channelRateLimit[MAX_CHANNELS+1] = {0,200,500,500,500,500,500,500,500};	//0-500 for proportional
+const int channelRateLimit[MAX_CHANNELS+1] = {0,300,500,500,500,500,500,500,500};	//0-500 for proportional
 //			Max speed/rate for prop channels	  1   2   3   4   5   6   7   8 //channel
 //			250 = half speed max  (channel time goes 1 - 1.5 - 2 msecs; hence the 500)
 //			(used to slow down trailer leg up/down)
@@ -359,7 +359,8 @@ void loop() {
 		outChannel = 1; 
 //	------------
 		// Adjust legs value so that it doesn't wine when legs not in use.
-		//channelTime[1] = channelTime[1]-60;		// 2 Jan 2023
+		channelTime[1] = channelTime[1]-60;		// Feb 2023
+		// Also Leg Max at 200 is not enough for motor to turn so ratchet clicks - now at 300
 //	------------
 		channelTimeCopy[0] = channelTime[0];
 		statusChannelTimeCopy[0] = channelTimeCopy[0];
