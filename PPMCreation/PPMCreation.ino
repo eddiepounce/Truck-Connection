@@ -24,7 +24,7 @@ Create pulse stream - 500us pulses with time between rising edges = RC PWM time 
 	D4			Ch3		Indicator (uses trailer connector on MFU)
 	D5			Ch4		Indicator (uses trailer connector on MFU)
 	D6	Red		Ch5		Reversing Lighting (via Opto Isolator in LED circuit)
-	D7	Green			Camera Control - Selects forward or reverse camera				#########  Moved from A0
+	D7	Green			Camera Control - Selects forward or reverse camera			#########  Moved from A0
 	D8	Yellow			Throttle monitoring (PWM input)
 	D9	Purple	PWM 	Cab Lighting	
 	D10	Light Grey		Gearbox Servo from MFU  (28awg ribbon #2)
@@ -192,7 +192,7 @@ void pciSetup(byte pin) {
 
 
 ISR (PCINT0_vect) {
-    // For PCINT of pins D8 to D13 - Port B		(8 & 10 used)				//=======================================
+    // For PCINT of pins D8 to D13 - Port B		(8 & 10 used)	
 	//  if (PINB & B00000001)  Pin8		throttlePin
 	//  if (PINB & B00000100)  Pin10	gearboxFromMFUPin
 	
@@ -252,7 +252,7 @@ void setup() {
 	digitalWrite(cameraControlPin, LOW);	// default is front Camera
 	pinMode(throttlePin, INPUT);
 		// enable interrupt for pin...  -- Pin Change Interrupt (PCI)
-	pciSetup(throttlePin);									// ##########################################
+	pciSetup(throttlePin);
 		//PCICR  |= B00000001;			//"PCIE0" enabeled (PCINT0 to PCINT7)
 		//PCMSK0 |= B00000001;			//"PCINT0" enabeled -> D8 will trigger interrupt
 	// setup for switch on Rx6
@@ -313,6 +313,12 @@ void loop() {
 	// every 20 milliSeconds
 	nowTime = millis();
 	if (nowTime - frameTime > 20) {
+		
+		//########################################################################################		
+		//if (throttleValue > propMaxSetting+100 and back to mid
+		// change  5thWheelActive  state
+		//if !5thWheelActive  put -300 in output.  (gives a 700 pulse for channel)
+
 		for (int i = 1; i <= maxChannels; i++){
 			digitalWrite(outPin, HIGH);		// ouput the channel pulse (500uS)
 			delayMicroseconds(framePulseAndAddition);
@@ -377,8 +383,6 @@ void loop() {
 				digitalWrite(gearboxServoPin, LOW); 
 			}
 		}
-		
-		
 
 		// =========== Output Video Camera Control - Front/Rear =============
 			// cameraControlPin - controlled by monitoring Throttle
