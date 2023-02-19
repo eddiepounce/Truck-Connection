@@ -46,6 +46,8 @@ Specials & Extras
 					   (Back Left)	5
 		Running Lights (Front)		7		2 side and 2 front LEDs Off/On		Controlled by channel 2 and 
 																				flashed when Trailer Brake On
+		Start of Frame for scope	A2
+
 
 Suggested Change:  Move "pull up" for IR receiver to breakout board (then use single core sheilded!)
 Lorry Idle = 210mA;  Camera & TX = 295mA.   (CL520 LED Driver pulls 0.5mA to control it.)
@@ -219,7 +221,9 @@ unsigned int outChannel = MAX_CHANNELS+10;		// make sure output doesn't start ti
 // for monitoring input and showing status via LED_BUILTIN
 //		Pin13 (LED_BUILTIN) is on board LED = fast flash at start - no input signal
 //--------------------------
-int statusChannelTimeCopy[MAX_CHANNELS + 1];		// copy of channel times used for Debug
+const int frameStartPin = A2;					// Frame Start signal for scope 
+unsigned long frameStartTime = 0;				// For timing the Frame Start signal
+int statusChannelTimeCopy[MAX_CHANNELS + 1];	// copy of channel times used for Debug
 const int monLED_PIN = LED_BUILTIN;  //pin 13
 int monLED_OnTime	= 10;	//flash time - On time 		// setting for initial flashing before signal found
 int monLED_OffTime	= 50;	// Off
@@ -272,65 +276,19 @@ void(* resetSketch) (void) = 0;
 
 void interruptReadChannels() {
 	//500us pulses with time between rising edges = RC PWM time (1-2ms).
-	nowTime = micros();			// get current time - microseconds
+	nowTime = micros();				// get current time - microseconds
 	diffTime = nowTime - oldTime;	// calculate RC PWM pulse length (time since last rising edge!)
 	if (diffTime > minProportionalValue) {		// sort of debounce - if pulse shorter than 0.7ms it cannot have finished.
 		oldTime = nowTime;
 		channelIn++;
 		if (diffTime >= LONGEST_WAIT_FOR_CHANNEL) {		// check for frame finishing - actually start of next frame!!!!
-	//		frameCount++;
-	//		if (channelIn < MAX_CHANNELS+1){
-	//			shortFrameCount++;
-	//		}
 			channelIn = 0; 
 		}
-	//	if (channelIn > MAX_CHANNELS) {		// check for long frame 
-	//		longFrameCount++;
-	//	} else {
-			channelTime[channelIn] = diffTime;		// capture RC PWM pulse length
-	//	}
-		if (channelIn == maxChannels) {		// we can start after the 6 channels we are using are here.
+		channelTime[channelIn] = diffTime;		// capture RC PWM pulse length
+		if (channelIn == maxChannels) {			// we can start after the 6 channels we are using are here.
 			frameAvailable = true;
 		}
 	}
-}
-
-static volatile int timerTime;
-static volatile int outputIntDiff;
-// -------------------------------
-//for interrupt Timer (for output)
-//--------------------------------
-ISR(TIMER2_COMPA_vect){ 
-	//interrupt every 40? micro seconds - controlled by constant timerPrecission
-	timerTime = timerTime + timerPrecission;	
-	// -------------------------------------------------------------------
-	// ======== finish processing for all channels still active ==========
-	// -------------------------------------------------------------------
-	for (int i = 1; i <= maxChannels; i++) {
-		if (!(channelTimeCopy[i] < 0)) {							// channel still active
-			outputIntDiff = timerTime - channelOutTimeStart[i];
-			if (outputIntDiff >= channelTimeCopy[i]) {			// finished?
-				digitalWrite(channelPIN[i], LOW);
-				channelTimeCopy[i] = -outputIntDiff;				// done
-			}
-		}
-	}
-
-/*
-//	for (int i = 1; i <= MAX_tSwitch-2; i++) {			
-	const int i = 1;		
-	// output the user ToggleSwitch proportional values - not the system or on/off ones
-		if (tSwitchValueOutput[i] > minProportionalValue) {			//for proportional channels still active
-			outputIntDiff = timerTime - tSwitchOutTimeStart[i];
-			if (outputIntDiff >= tSwitchValueOutput[i]) {		// finished?
-				digitalWrite(tSwitchPIN[i], LOW);
-				tSwitchValueOutput[i] = -outputIntDiff;			// done
-			}
-		}
-//	}
-
-*/
-
 }
 
 // -------------------------------
@@ -339,61 +297,44 @@ ISR(TIMER2_COMPA_vect){
 void setup() {
 	Serial.begin(115200);
 	if (tSwitchValue[MAX_tSwitch-1]) Serial.println("\n--- System Starting ---");
-	pinMode(monLED_PIN, OUTPUT);
-	channelTime[0] = -1;		// just something that will be noted if seen
+	channelTime[0] = -1;				// just something that will be noted if seen
+	pinMode(frameStartPin, OUTPUT);		// For frame start pulse to enable lock on Scope display 
+	digitalWrite(frameStartPin, LOW); 
 	for (int i = 1; i <= maxChannels; i++){
+		// init the storage for input interrupt routine and its copies
+		if (channelType[i] == "s") {
+			channelTime[i] = PULSE_LENGTH_MIN;
+			channelTimeCopy[i] = PULSE_LENGTH_MIN; 
+			statusChannelTimeCopy[i] = PULSE_LENGTH_MIN;
+		} else {
+			channelTime[i] = PULSE_LENGTH_MID;
+			channelTimeCopy[i] = PULSE_LENGTH_MID; 
+			statusChannelTimeCopy[i] = PULSE_LENGTH_MID; 
+		}
 		// set the output pins (hardware) as needed.
-		if (channelPIN[i] > 0) pinMode(channelPIN[i], OUTPUT);
-		if (channelDirectionPIN[i] > 0) pinMode(channelDirectionPIN[i], OUTPUT);
-		// init the storage for input interrupt routine
-		channelTime[i] = -2;  // negative = input processed
-//		if (i <= 4) PULSE_LENGTH_MID_temp[i] = PULSE_LENGTH_MID;	// dev version for learning mid point
+		if (channelPIN[i] > 0) {
+			pinMode(channelPIN[i], OUTPUT);
+			digitalWrite(channelPIN[i], LOW); 
+		}
+		if (channelDirectionPIN[i] > 0) {
+			pinMode(channelDirectionPIN[i], OUTPUT);
+			digitalWrite(channelDirectionPIN[i], LOW); 
+		}
 	}
 	for (int i = 1; i <= MAX_tSwitch; i++){
 		// set the output pins (hardware) as needed.
-		if (tSwitchPIN[i] > 0) pinMode(tSwitchPIN[i], OUTPUT);
+		if (tSwitchPIN[i] > 0) {
+			pinMode(tSwitchPIN[i], OUTPUT);
+			digitalWrite(tSwitchPIN[i], LOW); 
+		}
 	} 
+	pinMode(monLED_PIN, OUTPUT);
 	pinMode(legsSensorPin, INPUT);								// Linear Hall Effect Sensor - no pullup needed
 	pinMode(trailerBrakePin, OUTPUT);
 	pinMode(runningLightsPin1, OUTPUT);
 	pinMode(runningLightsPin2, OUTPUT);
 	pinMode(runningLightsPin3, OUTPUT);
-	
-	bitWrite(TIMSK2, OCIE2A, 0); // disable interrupt
-	// -- set timer2 interrupt  for interrupt timer - too low and the system locks up so min 40?
-	//  timerPrecission is effectively the number of micro seconds between interupts 
-	//	- too quick and processing doesn't finish!!  but the smaller the better for proportional accuracy.
-	TCCR2A = 0;	// set entire TCCR2A register to 0
-	TCCR2B = 0;	// same for TCCR2B
-	TCNT2  = 0;	//initialize counter value to 0
-		// set compare match register
-		//  OCR2A = 200;  // (must be <256)
-	OCR2A = 2*timerPrecission;	//  2 * 40   (must be <256)
-	TCCR2A |= (1 << WGM21);	// turn on CTC mode
-	TCCR2B |= (1 << CS21);    // Set CS21 bit for 8 prescaler;  22 for 64
-//	TIMSK2 |= (1 << OCIE2A);	// enable timer compare interrupt
-//	Don't enable here so timer doesn't start before first frame available
-		//	TIMSK2 &= ~(1 << OCIE2A);	// disable interrupt
-		// bitWrite(TIMSK2, OCIE2A, 0); // disable interrupt 
-		// bitWrite(TIMSK2, OCIE2A, 1); // enable interrupt 	
-			//byte timmer2Save = TIMSK2;	// save interrupt byte (current situation)
-			//TIMSK2 &= ~(1 << OCIE2A);		// disable interrupt
-			//TIMSK2 = timmer2Save;			// restore interrupt byte (old situation)
-
-//	ADMUX = _BV(REFS0) | _BV(MUX3) | _BV(MUX2) | _BV(MUX1);   // setup ADMUX for reading supply power value
-
-/* -- Not needed with cheaper ESC --
-	// Initialise legs so ESC gets a good centre position (else strange things can happen at hookup)
-	int pulseTime = 1500;	// 1.5 millisecond pulses - i.e. mid position
-	int pulseCount = 30; 	// 20+ pulses needed for ESC centre initialisation
-	for (int i=1; i <= pulseCount; i++) {
-		digitalWrite(channelPIN[1], HIGH); 	// set channel 1 (legs) high
-		delayMicroseconds(pulseTime);		//	for xx time
-		digitalWrite(channelPIN[1], LOW);	// set channel 1 (legs) low
-		delay(18);							// wait for inter pulse gap
-	}
-*/
-	
+		
 	// Initialise PPM input interrupt system
 	pinMode(inputPin, PPM_INPUT_TYPE);  
 	attachInterrupt(digitalPinToInterrupt(inputPin), interruptReadChannels, PULSE_EDGE);
@@ -415,21 +356,23 @@ void loop() {
 		//  there is 20 minus 16 or so mS (i.e. the inter frame gap) to do all this.
 		// first time through for this frame
 		frameAvailable = false;		
-//		delayMicroseconds(channelDelayTimer);		//------ to spread out starts ---------------------------
 		outChannel = 1; 
-//
+//	------------
 		// Adjust legs value so that it doesn't wine when legs not in use.
-		//channelTime[1] = channelTime[1]-40;
-		channelTime[1] = channelTime[1]-60;		// 2 Jan 2023
-		//
+		//channelTime[1] = channelTime[1]-60;		// 2 Jan 2023
+//	------------
 		channelTimeCopy[0] = channelTime[0];
 		statusChannelTimeCopy[0] = channelTimeCopy[0];
+		// make a consistent copy of channel times for processing
+		for (int i=1; i <= MAX_CHANNELS; i++) {
+			channelTimeCopy[i] = channelTime[i];
+			statusChannelTimeCopy[i] = channelTimeCopy[i];
+		}
 		if (trailerBrakeOn && millis() - trailerBrakeTimeOn > trailerBrakeOnDelay) {	
 													// seeing frames so turn trailer brake OFF after 2 seconds
 			if (setTrailerBrake(false) && tSwitchValue[MAX_tSwitch-1]) 
 										Serial.println("##### Trailer Brake Off when frame available"); //Debug on
 		}			
-		timerTime = 0;					// reset the time being used in the timer interrupt for next frame.
 		//--Monitoring--
 		monLED_CycleCount++;
 		monTimeOfLastCycle = millis();
@@ -437,31 +380,20 @@ void loop() {
 		//--Monitoring--end
 		debugCycleTime = 1000;  // reset debugCycleTime to 1 second 
 								// (set very slow if connection lost (no frames seen)
-		bitWrite(TIMSK2, OCIE2A, 1); 	// enable output timer interrupt  (disabled for startup)
+		// ==== Frame Start signal for scope (START) ====
+		digitalWrite(frameStartPin, HIGH); 
+		frameStartTime = micros();	
 	}
-	monTimeElapse = millis() - monTimeOfLastCycle;  
 
+	// ==== Frame Start signal for scope (END) ====
+	if (micros() - frameStartTime > 500) digitalWrite(frameStartPin, LOW);	// controls Frame Start Pulse Length - .5mS ish
 
 	// --------------------------------------------------------------
 	// ========    processing for one channel at a time    ==========
 	// --------------------------------------------------------------
 	if (outChannel <= maxChannels) {
-//		Serial.println(timerTime);
-//		delayMicroseconds(channelDelayTimer);		//------ to spread out starts ---------------------------
-		channelTimeCopy[outChannel] = channelTime[outChannel];
 		if (invertChannel[outChannel] == 'I') 		// reverse direction of channel
-					channelTimeCopy[outChannel] = ((-(channelTimeCopy[outChannel] - PULSE_LENGTH_MID))+PULSE_LENGTH_MID); 
-/*
-		// learn centre point of TX / RX for 4 stick channels.
-		if (outChannel <= 4 && monLED_CycleCount > 10 && monLED_CycleCount < 60) {		// first 50 frames (1 second)
-			PULSE_LENGTH_MID_temp[outChannel] = (PULSE_LENGTH_MID_temp[outChannel] + channelTimeCopy[outChannel]) / 2;
-			//Serial.print("-- Channel: ");
-			//Serial.print(outChannel);
-			//Serial.print("  value: ");
-			//Serial.print(PULSE_LENGTH_MID_temp[outChannel]);
-			//Serial.println("");
-		}
-*/	
+					channelTimeCopy[outChannel] = ((-(channelTimeCopy[outChannel] - PULSE_LENGTH_MID))+PULSE_LENGTH_MID); 	
 		// Process channel
 		switch (channelType[outChannel]) {
 		// 		set 'output high' on each proportional channel  and set others appropriately
@@ -606,10 +538,6 @@ void loop() {
 					} else {	// not in centre (off)
 						if (millis()-channelTimeLimitStart[outChannel] > channelTimeLimit[outChannel]) {	// is limit exceeded
 							channelTimeCopy[outChannel] = PULSE_LENGTH_MID;			// force stick position to centre (off)
-					//		if (outChannel == trailerLegsChannel && !legsDirectionUp) {		// legs will be fully down
-					//			if (setTrailerBrake(true) && tSwitchValue[MAX_tSwitch-1])	// set brakes ON
-					//								Serial.println("##### Trailer Brake On when Legs Down"); //Debug on
-					//		}
 						}
 					}
 				}
@@ -622,9 +550,9 @@ void loop() {
 				if (channelTimeCopy[outChannel] < PULSE_LENGTH_MID - channelRateLimit[outChannel]) {
 					channelTimeCopy[outChannel] = PULSE_LENGTH_MID - channelRateLimit[outChannel];    // limit rate
 				}
-
-				channelOutTimeStart[outChannel] = timerTime;
 				digitalWrite(channelPIN[outChannel], HIGH);  //(proportional output (i.e. time based))
+				delayMicroseconds(channelTimeCopy[outChannel]);	
+				digitalWrite(channelPIN[outChannel], LOW);
 				statusChannelTimeCopy[outChannel] = channelTimeCopy[outChannel]; // copy data for debug/status output
 			} else {
 				statusChannelTimeCopy[outChannel] = channelTimeCopy[outChannel]; // copy data for debug/status output
@@ -689,9 +617,9 @@ void loop() {
 				if (channelTimeCopy[outChannel] < PULSE_LENGTH_MID - channelRateLimit[outChannel]) {
 					channelTimeCopy[outChannel] = PULSE_LENGTH_MID - channelRateLimit[outChannel];    // limit rate
 				}
-				//			channelOutTimeStart[outChannel] = micros();	
-				channelOutTimeStart[outChannel] = timerTime;
 				digitalWrite(channelPIN[outChannel], HIGH);  //(proportional output (i.e. time based))
+				delayMicroseconds(channelTimeCopy[outChannel]);	
+				digitalWrite(channelPIN[outChannel], LOW);
 				statusChannelTimeCopy[outChannel] = channelTimeCopy[outChannel]; // copy data for debug/status output
 			} else {
 				statusChannelTimeCopy[outChannel] = channelTimeCopy[outChannel]; // copy data for debug/status output
@@ -743,124 +671,29 @@ void loop() {
 							tSwitchValue[tSwitchNo] = 1;
 							if (tSwitchPIN[tSwitchNo]) digitalWrite(tSwitchPIN[tSwitchNo], HIGH);  // set ON
 						}
-					} else {												// long ON  = turn OFF	?????????????????
-						//tSwitchValue[tSwitchNo] = 0;						//			now used in tractor - gearbox control
-						//if (tSwitchPIN[tSwitchNo]) digitalWrite(tSwitchPIN[tSwitchNo], LOW);   	// set OFF
+					} else {												// long ON  = turn OFF
+						//tSwitchValue[tSwitchNo] = 0;						// now used in tractor - gearbox control
+						//if (tSwitchPIN[tSwitchNo]) digitalWrite(tSwitchPIN[tSwitchNo], LOW);   // set OFF
 					}
 				}
-				if (tSwitchType[tSwitchNo] == 10) {			// switch type 10 = Proportional output,  MID tggled on/off to 0
-					if (tSwitchTimerNow - tSwitchTimerStartON < tSwitchSetTime) {	// short ON = toggle
-						if (!tSwitchValue[tSwitchNo]) {
-							tSwitchValue[tSwitchNo] = PULSE_LENGTH_MID;
-						} else {
-							tSwitchValue[tSwitchNo] = 0;
-						}
-					} else {														// long ON  = turn OFF
-						tSwitchValue[tSwitchNo] = 0;
-					}
-//					delayMicroseconds(channelDelayTimer);		//------ to spread out starts ---------------------------
-					// output to be high - proportional output (i.e. time based)
-					tSwitchOutTimeStart[tSwitchNo] = timerTime;
-					digitalWrite(tSwitchPIN[tSwitchNo], HIGH);
-				}
-				if (tSwitchType[tSwitchNo] == 11) {			// switch type 11 = Proportional output,  high/low
-					if (tSwitchTimerNow - tSwitchTimerStartON < tSwitchSetTime) {	// short ON = toggle
-						if (tSwitchValue[tSwitchNo] == PULSE_LENGTH_MAX) {
-							tSwitchValue[tSwitchNo] = PULSE_LENGTH_MIN;
-						} else {
-							tSwitchValue[tSwitchNo] = PULSE_LENGTH_MAX;
-						}
-					} else {														// long ON  = turn OFF
-						tSwitchValue[tSwitchNo] = PULSE_LENGTH_MIN;
-					}
-//					delayMicroseconds(channelDelayTimer);		//------ to spread out starts ---------------------------
-					// output to be high - proportional output (i.e. time based)
-					tSwitchOutTimeStart[tSwitchNo] = timerTime;
-					digitalWrite(tSwitchPIN[tSwitchNo], HIGH);
-				}
-				if (tSwitchType[tSwitchNo] == 12) {			// switch type 12 = Proportional output,  high/mid/low
-					if (tSwitchTimerNow - tSwitchTimerStartON < tSwitchSetTime) {	// short ON = toggle through
-						if (tSwitchValue[tSwitchNo] == PULSE_LENGTH_MAX) {
-							tSwitchValue[tSwitchNo] = PULSE_LENGTH_MIN;
-							if (tSwitchValue[tSwitchNo] == PULSE_LENGTH_MIN) {
-								tSwitchValue[tSwitchNo] = PULSE_LENGTH_MID;
-							} else {
-								tSwitchValue[tSwitchNo] = PULSE_LENGTH_MAX;
-							}
-						}
-					} else {														// long ON  = turn OFF
-						tSwitchValue[tSwitchNo] = PULSE_LENGTH_MIN;
-					}
-//					delayMicroseconds(channelDelayTimer);		//------ to spread out starts ---------------------------
-					// output to be high - proportional output (i.e. time based)
-					tSwitchOutTimeStart[tSwitchNo] = timerTime;
-					digitalWrite(tSwitchPIN[tSwitchNo], HIGH);
-				}
-				if (tSwitchType[tSwitchNo] == 13) {			// switch type 13 = Proportional output,  high/mid only
-					if (tSwitchTimerNow - tSwitchTimerStartON < tSwitchSetTime) {	// short ON = toggle
-						if (tSwitchValue[tSwitchNo] == PULSE_LENGTH_MAX) {
-							tSwitchValue[tSwitchNo] = PULSE_LENGTH_MID;
-						} else {
-							tSwitchValue[tSwitchNo] = PULSE_LENGTH_MAX;
-						}
-					} else {														// long ON  = turn OFF
-						tSwitchValue[tSwitchNo] = PULSE_LENGTH_MID;
-					}
-//					delayMicroseconds(channelDelayTimer);		//------ to spread out starts ---------------------------
-					// output to be high - proportional output (i.e. time based)
-					tSwitchOutTimeStart[tSwitchNo] = timerTime;
-					digitalWrite(tSwitchPIN[tSwitchNo], HIGH);
-				}				
 				tSwitchTimerStartON = 0;		// empty on timmer!
 			}
 			statusChannelTimeCopy[outChannel] = channelTimeCopy[outChannel]; // copy data for debug/status output
 			channelTimeCopy[outChannel] = -'T';			// channel dealt with set negative
 			break;
 		}
-//		statusChannelTimeCopy[outChannel] = channelTimeCopy[outChannel];		// copy data for debug/status output
 		outChannel++;					// inc. channel being processed for output.
-										// will do this for each channel - 1 at a time to allow finished processing below!
-	}
-	
 
-/*	
-// This was working but now using a timmer interrupt instead to get better (more consistent) finish times.
-	// ------------------------------------------------------
-	// ======== finish processing for all channels ==========
-	// ------------------------------------------------------
-	for (int i = 1; i <= maxChannels; i++) {
-		if (channelTimeCopy[i] > 0) {								// channel still active
-			outputMicrosNow = micros();
-			outputMicrosDiff = outputMicrosNow - channelOutTimeStart[i];
-			if (outputMicrosDiff >= channelTimeCopy[i]) {			// finished?
-				digitalWrite(channelPIN[i], LOW);
-				channelTimeCopy[i] = -outputMicrosDiff;				// done
-			}
+		if  (outChannel > maxChannels) {		// finish processing if required
+			// nothing
 		}
 	}
-*/
-// Used here as timing not critical
-/* Not needed at present
-	// ======== finish processing for ToggleSwitch channels ==========
-	for (int i = 1; i <= MAX_tSwitch-2; i++) {			
-	// output the user ToggleSwitch proportional values - not the system or on/off ones
-		if (tSwitchValueOutput[i] > minProportionalValue) {			//for proportional channels
-			outputMicrosNow = micros();
-			outputMicrosDiff = outputMicrosNow - tSwitchOutTimeStart[i];
-			if (outputMicrosDiff >= tSwitchValueOutput[i]) {		// finished?
-				digitalWrite(tSwitchPIN[i], LOW);
-				tSwitchValueOutput[i] = -outputMicrosDiff;			// done			
-			}
-		}
-	}
-*/
 
 	// ----------------------------------------------------------------------
 	// --  Trailer Brake flasher  --
 	// ----------------------------------------------------------------------
 	if (trailerBrakeOn) {
 		if (runningLightsFlashPosition == 5) {
-//Serial.println("--Brake4 ");
 			runningLightsFlashPosition = 0;
 			runningLightsFlashStart = millis();
 			if (mon2 && tSwitchValue[MAX_tSwitch-1] >= 2) Serial.println("Trailer Brake On - Lights Flashing");
@@ -870,12 +703,9 @@ void loop() {
 		}
 		if (runningLightsFlashCurrent > 
 					runningLightsFlashPeriod + (runningLightsFlashInc * runningLightsFlashPosition)) {
-//Serial.println("--Brake1 ");
 			if ((runningLightsFlashPosition % 2)) {		// if odd
-//Serial.println("--Brake2 ");
 				digitalWrite(runningLightsPin1, HIGH);
 			} else {
-//Serial.println("--Brake3 ");
 				digitalWrite(runningLightsPin1, LOW);
 			}
 			runningLightsFlashPosition++;
@@ -885,6 +715,8 @@ void loop() {
 	// ----------------------------------------------------------------------
 	// --  Monitoring  --
 	// ----------------------------------------------------------------------
+
+	monTimeElapse = millis() - monTimeOfLastCycle;  
 
 	// No input for 0.5	sec (some frames seen)
 	if (mon0 && monLED_CycleCount > 50 && (monTimeElapse) > 500) {  // 50 frames seen + 0.5 sec 
@@ -995,23 +827,22 @@ void loop() {
 	if (millis() - debugCyleStart > debugCycleTime) {		//loop for serial input and debug output
 		debugCyleStart = millis();
 		
-// Put debug like:	Serial.print(" -- 8indL: ");	here.
-
 		if (Serial.available() > 0) {		// Set debug on or off from TTY connection
 			String monSerialRead = Serial.readString();
-			if (monSerialRead == "Debug1\n" || monSerialRead == "d1\n" || monSerialRead == "d1") {
+			monSerialRead.trim();               // remove any \r \n white space at the end of the String
+			if (monSerialRead == "Debug1" || monSerialRead == "d1") {
 				Serial.println("Debug is now turned on - Level 1");
 				tSwitchValue[MAX_tSwitch-1] = 1;
-			} else if (monSerialRead == "Debug2\n" || monSerialRead == "d2\n" || monSerialRead == "d2") {
+			} else if (monSerialRead == "Debug2" || monSerialRead == "d2") {
 				Serial.println("Debug is now turned on - Level 2");
 				tSwitchValue[MAX_tSwitch-1] = 2;
-			} else if (monSerialRead == "Debug\n" || monSerialRead == "d3\n" || monSerialRead == "Debug3\n" || monSerialRead == "d3") {
+			} else if (monSerialRead == "Debug" || monSerialRead == "d3" || monSerialRead == "Debug3") {
 				Serial.println("Debug is now turned on - Level 3");
 				tSwitchValue[MAX_tSwitch-1] = 3;
-			} else if (monSerialRead == "tt\n") {
+			} else if (monSerialRead == "tt") {
 				Serial.println("Trailer Brake ON.");
 				setTrailerBrake(true);
-			} else if (monSerialRead == "t\n") {
+			} else if (monSerialRead == "t") {
 				Serial.println("Trailer Brake OFF.");
 				setTrailerBrake(false);
 			} else {
@@ -1053,9 +884,6 @@ void loop() {
 				Serial.print("Legs position value: "); 
 				Serial.println(analogRead(legsSensorPin)); 
 
-				//Serial.print("--Power reading count: ");
-				//Serial.print(monPowerReadingCount);
-				//Serial.print("  ");
 				Serial.print("Power reading value: ");
 				Serial.println(monPowerReadingValue);
 			}
@@ -1149,22 +977,18 @@ bool setTrailerBrake(bool onOff) {
 //		Serial.println("-- trailerBrakeOn = no change;");
 		return false;
 	}
-	byte timmer2Save = TIMSK2;	// save interrupt byte (current situation)
-	TIMSK2 &= ~(1 << OCIE2A);		// disable interrupt
-//	bitWrite(TIMSK2, OCIE2A, 0); // disable interrupt so this bit works (only happens rarely) 
 	for (int i=1; i <= pulseCount; i++) {
-		digitalWrite(trailerBrakePin, HIGH); delayMicroseconds(pulseTime);
+		digitalWrite(trailerBrakePin, HIGH); 
+		delayMicroseconds(pulseTime);
 		digitalWrite(trailerBrakePin, LOW); delay(18);
 	}
-	TIMSK2 = timmer2Save;			// restore interrupt byte (old situation)
-//	bitWrite(TIMSK2, OCIE2A, 1); // enable interrupt 
 	return true;
 }
 
 long readVcc() {
 	long result; // Read 1.1V reference against AVcc 
 	ADMUX = _BV(REFS0) | _BV(MUX3) | _BV(MUX2) | _BV(MUX1); // done in setup!!
-	delay(2); // Wait for Vref to settle 
+	delayMicroseconds(2000);		// doesn't block interrupts!
 	ADCSRA |= _BV(ADSC); // Convert 
 	while (bit_is_set(ADCSRA,ADSC)); 
 	result = ADCL; 
