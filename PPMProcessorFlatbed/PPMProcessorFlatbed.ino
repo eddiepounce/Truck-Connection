@@ -505,6 +505,16 @@ void loop() {
 			break;
 //----------------
 		case 'P':					//proportional
+			
+			// ##############################################################
+			// if channelTimeCopy[outChannel]  is < 700
+			// = inactive channel
+			//therefore:
+			//	statusChannelTimeCopy[outChannel] = channelTimeCopy[outChannel]; // copy data for debug/status output
+			//	channelTimeCopy[outChannel] = -'P';	// channel not in use
+			//	break;
+			//This will stop esc from being active and whining.
+			
 			//--set direction pin						
 			if (channelDirectionPIN[outChannel] > 0 && channelTimeCopy[outChannel] > PULSE_LENGTH_MID) {
 				digitalWrite(channelDirectionPIN[outChannel], HIGH);// direction on
