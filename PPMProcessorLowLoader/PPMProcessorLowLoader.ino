@@ -308,15 +308,15 @@ void setup() {
 
 	for (int i = 1; i <= MAX_CHANNELS; i++){
 		// init the storage for input interrupt routine and its copies
-		if (channelType[i] == "s") {
-			channelTime[i] = PULSE_LENGTH_MIN;
-			channelTimeCopy[i] = PULSE_LENGTH_MIN; 
-			statusChannelTimeCopy[i] = PULSE_LENGTH_MIN;
-		} else {
+//		if (channelType[i] == 's') {			// single quotes for char!!!!!!!
+//			channelTime[i] = PULSE_LENGTH_MIN;
+//			channelTimeCopy[i] = PULSE_LENGTH_MIN; 
+//			statusChannelTimeCopy[i] = PULSE_LENGTH_MIN;
+//		} else {
 			channelTime[i] = PULSE_LENGTH_MID;
 			channelTimeCopy[i] = PULSE_LENGTH_MID; 
 			statusChannelTimeCopy[i] = PULSE_LENGTH_MID; 
-		}
+//		}
 		// set the output pins (hardware) as needed.
 		if (channelPIN[i] > 0) {
 			pinMode(channelPIN[i], OUTPUT);
@@ -710,7 +710,7 @@ void loop() {
 				statusChannelTimeCopy[outChannel] = channelTimeCopy[outChannel]; // copy data for debug/status output
 			} else {
 				statusChannelTimeCopy[outChannel] = channelTimeCopy[outChannel]; // copy data for debug/status output
-				channelTimeCopy[outChannel] = -'S';	// channel not in use
+				channelTimeCopy[outChannel] = -'s';	// channel not in use
 			}
 			break;
 //----------------
