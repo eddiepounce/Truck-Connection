@@ -33,9 +33,9 @@ Channel		Function				Pin		Info								Implementation
 	7		Ramp Motor				A2/A3	Low/Mid/High						S - for Ramp Motor control
 			Rear Legs - Left		12		PWM 								PWM feed to Servo
 			Rear Legs - Right		8		PWM 								PWM feed to Servo
-			Running Lights (Right)			rear 4 side LEDs Off/On				Controlled by channel 2 (Rear Lights)
-						   (Left)			rear 4 side LEDs Off/On				Controlled by channel 2 (Rear Lights)
-			Running Lights (Front)			2 side and 2 front LEDs Off/On		Controlled by channel 2 (Rear Lights)
+			Running Lights (Right)	11		rear 4 side LEDs Off/On				Controlled by channel 2 (Rear Lights)
+						   (Left)	9		rear 4 side LEDs Off/On				Controlled by channel 2 (Rear Lights)
+			Running Lights (Front)	10		2 side and 2 front LEDs Off/On		Controlled by channel 2 (Rear Lights)
 
 TSwitch		Function										
 -------		--------										
@@ -134,9 +134,9 @@ const int channelSpecialType[MAX_CHANNELS+1] = {0,4,1,2,3,0,0,5,0};  //type
 //								[Replacement for "if (channel = x)" ....]
 
 // ------- Running Lights ------------------
-const int runningLightsFrontPin = 0;		// front running lights - pin# (2 front side & front white marker lights)
-const int runningLightsRearRightPin = 0;	// Rear Right Side Running Lights - pin#
-const int runningLightsRearLeftPin = 0;		// Rear Left Side Running Lights - pin#
+const int runningLightsFrontPin = 10;		// front running lights - pin# (2 front side & front white marker lights)
+const int runningLightsRearRightPin = 11;	// Rear Right Side Running Lights - pin#
+const int runningLightsRearLeftPin = 9;		// Rear Left Side Running Lights - pin#
 const int runningLightsFlashPeriod = 1000;	// flash sequence every ....
 const int runningLightsFlashInc = 100;		// increment for flash sequence
 int runningLightsFlashPosition = 5;			// where in flash sequence
@@ -214,13 +214,6 @@ const int SWITCH_MID_HIGH = 1700;
 // for output cycles
 //--------------------------
 int outChannel = 0;
-
-//#long channelOutTimeStart[MAX_CHANNELS + 1];  	//time the channel started output
-//#static volatile int tSwitchOutTimeStart[MAX_tSwitch+1];			//time the proportional tSwitch started output
-//#static volatile int rearLegsOutTimeStart;  				//time the PWM Pulse started 
-//#unsigned long outputMicrosNow;
-//#unsigned long outputMicrosDiff;
-
 
 // -------------------------
 // for monitoring input and showing status via LED_BUILTIN
@@ -341,10 +334,10 @@ void setup() {
 	pinMode(monLED_PIN, OUTPUT);		// 
 	//pinMode(legsSensorPin, INPUT);		// Linear Hall Effect Sensor - no pullup needed
 	//pinMode(trailerBrakePin, OUTPUT);
-	//pinMode(runningLightsPin1, OUTPUT);			runningLightsFrontPin
-	//pinMode(runningLightsPin2, OUTPUT);			runningLightsRearRightPin
-	//pinMode(runningLightsPin3, OUTPUT);			runningLightsRearLeftPin
-	
+	pinMode(runningLightsFrontPin, OUTPUT);	
+	pinMode(runningLightsRearRightPin, OUTPUT);
+	pinMode(runningLightsRearLeftPin, OUTPUT);
+
 	for (int i=1; i <= 10; i++) {						// initialise Rear Legs position
 		digitalWrite(rearLegsLeftPin, HIGH); 
 		delayMicroseconds(rearLegsLeftPulseLength);
@@ -392,7 +385,7 @@ void loop() {
 		//--Monitoring--
 		monLED_CycleCount++;
 		monTimeOfLastCycle = millis();
-		mon1=true; mon2=true; mon3=true; mon4=true;
+		mon0 = true; mon1=true; mon2=true; mon3=true; mon4=true;
 		//--Monitoring--end
 		debugCycleTime = 1000;  // reset debugCycleTime to 1 second 
 								// (set very slow if connection lost (no frames seen)
@@ -460,16 +453,16 @@ void loop() {
 				if (channelTimeCopy[outChannel] > SWITCH_MID_LOW 
 							&& channelTimeCopy[outChannel] < SWITCH_MID_HIGH) {
 					digitalWrite(channelDirectionPIN2[outChannel], HIGH);  // set on
-//					if (localTime - runningLightsFlashStart > 2000) digitalWrite(runningLightsPin1, HIGH);  // set on
-//					if (localTime - turnLeftStart > 500) digitalWrite(runningLightsPin2, HIGH);  // set on
-//					if (localTime - turnRightStart > 500) digitalWrite(runningLightsPin3, HIGH);  // set on
+					if (localTime - runningLightsFlashStart > 2000) digitalWrite(runningLightsFrontPin, HIGH);  // set on
+					if (localTime - turnLeftStart > 500) digitalWrite(runningLightsRearRightPin, HIGH);  // set on
+					if (localTime - turnRightStart > 500) digitalWrite(runningLightsRearLeftPin, HIGH);  // set on
 				} 
 				//special off if at low  (can't use an "else" here - channel has 3 positions)
 				if (channelTimeCopy[outChannel] < SWITCH_OFF) {
 					digitalWrite(channelDirectionPIN2[outChannel], LOW);  // set off
-//					if (localTime - runningLightsFlashStart > 2000) digitalWrite(runningLightsPin1, LOW);  // set off
-//					digitalWrite(runningLightsPin2, LOW);  // set off
-//					digitalWrite(runningLightsPin3, LOW);  // set off
+					if (localTime - runningLightsFlashStart > 2000) digitalWrite(runningLightsFrontPin, LOW);  // set off
+					digitalWrite(runningLightsRearRightPin, LOW);  // set off
+					digitalWrite(runningLightsRearLeftPin, LOW);  // set off
 				}
 				if (channelTimeCopy[outChannel] > SWITCH_ON) {
 					digitalWrite(channelDirectionPIN1[outChannel], HIGH);  // set on
@@ -601,24 +594,24 @@ void loop() {
 			if (channelDirectionPIN1[outChannel] > 0) { 
 				if (channelTimeCopy[outChannel] == PULSE_LENGTH_MAX) {
 					digitalWrite(channelDirectionPIN1[outChannel], HIGH); //on
-//					// --- Special Type 2&3 ---
-//					if (channelSpecialType[outChannel] == 2) {
-//						digitalWrite(runningLightsPin2, HIGH);
-//						turnLeftStart = millis();
-//					}
-//					if (channelSpecialType[outChannel] == 3) {
-//						digitalWrite(runningLightsPin3, HIGH);
-//						turnRightStart = millis();
-//					}
+					// --- Special Type 2&3 ---
+					if (channelSpecialType[outChannel] == 2) {
+						digitalWrite(runningLightsRearRightPin, HIGH);
+						turnLeftStart = millis();
+					}
+					if (channelSpecialType[outChannel] == 3) {
+						digitalWrite(runningLightsRearLeftPin, HIGH);
+						turnRightStart = millis();
+					}
 				} else {
 					digitalWrite(channelDirectionPIN1[outChannel], LOW); //off
 					// --- Special Type 2&3 ---
-//					if (channelSpecialType[outChannel] == 2) {
-//						if (millis() - turnLeftStart < 100) digitalWrite(runningLightsPin2, LOW);
-//					}
-//					if (channelSpecialType[outChannel] == 3) {
-//						if (millis() - turnRightStart < 100) digitalWrite(runningLightsPin3, LOW);
-//					}
+					if (channelSpecialType[outChannel] == 2) {
+						if (millis() - turnLeftStart < 100) digitalWrite(runningLightsRearRightPin, LOW);
+					}
+					if (channelSpecialType[outChannel] == 3) {
+						if (millis() - turnRightStart < 100) digitalWrite(runningLightsRearLeftPin, LOW);
+					}
 				}
 			}
 			if (channelDirectionPIN2[outChannel] > 0) {
@@ -672,9 +665,20 @@ void loop() {
 
 			// --use direction pin as control
 			if (channelDirectionPIN1[outChannel] > 0) {
+				unsigned long localTime = millis();
 				// this makes rear lights stay on when brake lights come on and go off - don't make into else like pin2!
-				if (channelTimeCopy[outChannel] == PULSE_LENGTH_MID) digitalWrite(channelDirectionPIN1[outChannel], HIGH); //on
-				if (channelTimeCopy[outChannel] == PULSE_LENGTH_MIN) digitalWrite(channelDirectionPIN1[outChannel], LOW); //off
+				if (channelTimeCopy[outChannel] == PULSE_LENGTH_MID) {
+					digitalWrite(channelDirectionPIN1[outChannel], HIGH); //on
+					if (localTime - runningLightsFlashStart > 2000) digitalWrite(runningLightsFrontPin, HIGH);  // set on
+					if (localTime - turnLeftStart > 500) digitalWrite(runningLightsRearRightPin, HIGH);  // set on
+					if (localTime - turnRightStart > 500) digitalWrite(runningLightsRearLeftPin, HIGH);  // set on
+				}
+				if (channelTimeCopy[outChannel] == PULSE_LENGTH_MIN) {
+					digitalWrite(channelDirectionPIN1[outChannel], LOW); //off
+					if (localTime - runningLightsFlashStart > 2000) digitalWrite(runningLightsFrontPin, LOW);  // set off
+					digitalWrite(runningLightsRearRightPin, LOW);  // set off
+					digitalWrite(runningLightsRearLeftPin, LOW);  // set off
+				}
 			}
 			if (channelDirectionPIN2[outChannel] > 0) {
 				if (channelTimeCopy[outChannel] == PULSE_LENGTH_MAX) {
@@ -895,8 +899,9 @@ void loop() {
 	monTimeElapse = millis() - monTimeOfLastCycle;
 
 	// No input for 0.5	sec (some frames seen)
-	if (mon0 && monLED_CycleCount > 50 && (monTimeElapse) > 500) {  // 50 frames seen + 0.5 sec 
+	if (mon0 && monLED_CycleCount > 10 && (monTimeElapse) > 500) {  // 10 frames seen + 0.5 sec 
 		mon0 = false; mon1=true;
+		if (tSwitchValue[MAX_tSwitch-1]) Serial.println("@@@@@@ Lost connection 0.5 sec @@@@@@"); //Debug on
 		// ------------------------------------------
 		// ---- Reset some stuff if input lost!! ----
 		//-------------------------------------------
@@ -916,10 +921,11 @@ void loop() {
 				digitalWrite(tSwitchPIN[i], LOW); 
 			}
 		} 
-		
-		
-		
-		
+		digitalWrite(rearLegsRightPin, LOW);
+		digitalWrite(rearLegsLeftPin, LOW);
+		digitalWrite(runningLightsFrontPin, LOW); 
+		digitalWrite(runningLightsRearRightPin, LOW); 
+		digitalWrite(runningLightsRearLeftPin, LOW); 
 		//-------------------------------------------		
 	}
 	// No input for 1 sec (some frames seen)
@@ -927,7 +933,7 @@ void loop() {
 		mon1 = false; mon2=true; 
 		// lost input signal - singal pulse
 		monLED_OnTime = 50; monLED_OffTime = 100; monLED_FlashPulse = 1; monLED_Gap = 500; 
-		if (tSwitchValue[MAX_tSwitch-1]) Serial.println("@@@@@@ Lost connection @@@@@@"); //Debug on
+		if (tSwitchValue[MAX_tSwitch-1]) Serial.println("@@@@@@ Lost connection for 1 second @@@@@@"); //Debug on
 	}
 	// No input for over 10secs  (some frames seen)
 	if (mon2 && monLED_CycleCount > 50 && (monTimeElapse) > 10000) { // 50 frames + 10secs
@@ -1055,9 +1061,6 @@ void loop() {
 				bitWrite(TIMSK2, OCIE2A, 0);	// disable output timer
 				
 	//  Turn things off!!!
-				// ------------------------------------------
-				// ---- Reset some stuff if input lost!! ----
-				//-------------------------------------------
 				for (int i = 1; i <= maxChannels; i++){
 					if (channelPIN[i] > 0) {
 						digitalWrite(channelPIN[i], LOW); 
@@ -1074,19 +1077,25 @@ void loop() {
 						digitalWrite(tSwitchPIN[i], LOW); 
 					}
 				} 
+				digitalWrite(rearLegsRightPin, LOW);
+				digitalWrite(rearLegsLeftPin, LOW);
+				digitalWrite(runningLightsFrontPin, LOW); 
+				digitalWrite(runningLightsRearRightPin, LOW); 
+				digitalWrite(runningLightsRearLeftPin, LOW); 
 
+	//  Flash all the lights
 				for (int i=0; i<2000; i++) {
 					digitalWrite(5, HIGH);	// Rear/Stop Lights
 					digitalWrite(6, HIGH);	// Rear/Stop Lights
 					digitalWrite(3, HIGH);	// Indicator Lights
 					digitalWrite(4, HIGH);	// Indicator Lights
-					//digitalWrite(7, HIGH);	// Front Runnin Lights
+					digitalWrite(10, HIGH);	// Front Runnin Lights
 					delay(100);
 					digitalWrite(5, LOW);	// Rear/Stop Lights
 					digitalWrite(6, LOW);	// Rear/Stop Lights
 					digitalWrite(3, LOW);	// Indicator Lights
 					digitalWrite(4, LOW);	// Indicator Lights
-					//digitalWrite(7, LOW);	// Front Runnin Lights
+					digitalWrite(10, LOW);	// Front Runnin Lights
 					delay(200);
 				}			
 			}
