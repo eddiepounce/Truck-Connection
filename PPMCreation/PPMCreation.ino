@@ -366,7 +366,6 @@ void loop() {
 				gearboxGear = 2;
 			}
 		} else {
-
                         // Code if stick being used -- Stick = left = 1st = servo ant-clock = gearcontrol forward.
                                         // Stick = right = 3rd = servo clockwise = gearcontrol backward.
                                         //      left = 84, 532, right = 984
@@ -378,8 +377,6 @@ void loop() {
 				gearboxGear = 2;
 			}
 		}
-		
-		
 		
 		if (gearboxGear != gearboxGearOld) {				// gear being changed
 			gearboxPulseCount = 0;
