@@ -135,8 +135,9 @@ volatile static bool gearboxFromMFUState = LOW;		// store last value for timing 
 
 volatile static unsigned long switchStartTime = 0;	// channelPIN[7] = A0
 //		used to store a time (micros) during input for pin change interrupt
-bool gearboxControlToggle = HIGH;       //  Start using switch -- LOW == stick; HIGH == switch;
-//bool gearboxControlToggle = LOW;       //  Start using Stick 
+//bool gearboxControlToggle = HIGH;       //  Start using switch -- LOW == stick; HIGH == switch;
+bool gearboxControlToggle = LOW;       //  Start using Stick 
+bool gearboxShiftStarted = false;		// Make sure only 1 gear change per stick movement.
 unsigned long tSwitchDownTimerStart = 0;
 unsigned long tSwitchTimerNow = 0;
 
@@ -366,6 +367,8 @@ void loop() {
 				gearboxGear = 2;
 			}
 		} else {
+/*  Changing way stick works - use as up/down mover instead of being in direct control
+
                         // Code if stick being used -- Stick = left = 1st = servo ant-clock = gearcontrol forward.
                                         // Stick = right = 3rd = servo clockwise = gearcontrol backward.
                                         //      left = 84, 532, right = 984
@@ -376,6 +379,24 @@ void loop() {
 			} else {
 				gearboxGear = 2;
 			}
+*/
+// New code June 2024
+	// bool gearboxControlToggle = LOW; - to start with stick  - line 138/139
+	// bool gearboxShiftStarted = false; - new so only 1 change per stick move  - line 140
+								// Code if stick being used -- Stick = left = down
+															// Stick = right = up
+								// (so your don't have to hold the stick over for 1st & 3rd)
+			if (!gearboxShiftStarted && gearboxFromMFUValue < propOffSetting) {			// down
+				gearboxShiftStarted = true;
+				if (gearboxGear == 3) gearboxGear = 2;
+				if (gearboxGear == 2) gearboxGear = 1;
+			} else if (!gearboxShiftStarted && gearboxFromMFUValue > propOnSetting) {	// up
+				gearboxShiftStarted = true;
+				if (gearboxGear == 1) gearboxGear = 2;
+				if (gearboxGear == 2) gearboxGear = 3;
+			} else {
+				gearboxShiftStarted = false;
+// New end
 		}
 		
 		if (gearboxGear != gearboxGearOld) {				// gear being changed
@@ -385,7 +406,7 @@ void loop() {
 			gearboxGearOld = gearboxGear;
 		}
 
-		if (gearboxPulseCount < 25) {						// 17 frames used to set servo position
+		if (gearboxPulseCount < 17) {						// 17 frames used to set servo position
 										// use a number 1 less that divisible by 3 so shake might work.
 // ************* Removed June 2024
 //			if (throttleValue > throttleReverseValue || throttleValue < throttleForwardValue) gearboxPulseCount += 1;
@@ -395,12 +416,8 @@ void loop() {
 			
 			
 			if (inDelay == 0) {
-  //    Options
-	//			delayMicroseconds(600 + (gearboxGear * 450));		//  1050, 1500, 1950				
-	//			delayMicroseconds(500 + (gearboxGear * 500));		//  1000, 1500, 2000  - this should be correct!
-	//			delayMicroseconds(400 + (gearboxGear * 550));		//   950, 1500, 2050.
 
-/* ************* Removed June 2024
+/* ************* Removed June 2024  (didn't work anyway)
 				if (gearboxGear == 3) {						// to try to shake into gear !!!!
 					if (gearboxPulseCount % 3 != 0) {
 						delayMicroseconds(1000);
@@ -430,10 +447,15 @@ void loop() {
 				if (gearboxGear == 2 && gearboxGearFrom == 2) delayMicroseconds(gearboxMid);
 				if (gearboxGear == 2 && gearboxGearFrom == 1) delayMicroseconds(gearboxMid);
 				if (gearboxGear == 1) delayMicroseconds(gearboxHgh);
-				
+// ****** Added June 24 END		
+/*    Options
+		delayMicroseconds(600 + (gearboxGear * 450));		//  1050, 1500, 1950				
+		delayMicroseconds(500 + (gearboxGear * 500));		//  1000, 1500, 2000  - this should be correct!
+		delayMicroseconds(400 + (gearboxGear * 550));		//   950, 1500, 2050.
+*/	
 				//delayMicroseconds(500 + (gearboxGear * 500));
 			} else {
-				delayMicroseconds(inDelay);
+				delayMicroseconds(inDelay);   // for debug - from keyboard!!
 			}
 
 			digitalWrite(gearboxServoPin, LOW); 
