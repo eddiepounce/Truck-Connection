@@ -124,8 +124,10 @@ const int ctrlCabLightingPin = 9;			// turns cab lighting on/off
 const int gearboxFromMFUPin = 10;			// PWM from MFU to feed to gearbox servo
 const int gearboxServoPin = 11;				// PWM to Gearbox Servo
 int gearboxGear = 2;
-int gearboxGearOld = 0;
-int gearboxPulseCount = 20;						// controls output to servo and number of pulses to send
+int gearboxGearOld = 2;
+int gearboxGearFrom = 2;
+int gearboxPulseCount = 100;						// controls output to servo and number of pulses to send (high value so no initialisation)
+int gearboxPulseCount2 = 0;           // so we can go too far and back
 volatile static unsigned long gearboxStartTime = 0;
 //		used to store a time (micros) during input for pin change interrupt
 volatile static int gearboxFromMFUValue = 500;			// initial value - mid point
@@ -133,7 +135,11 @@ volatile static bool gearboxFromMFUState = LOW;		// store last value for timing 
 
 volatile static unsigned long switchStartTime = 0;	// channelPIN[7] = A0
 //		used to store a time (micros) during input for pin change interrupt
+<<<<<<< Updated upstream
 bool gearboxControlToggle = HIGH;			//LOW == stick; HIGH == switch;
+=======
+bool gearboxControlToggle = HIGH;       //  Start using switch ****
+>>>>>>> Stashed changes
 unsigned long tSwitchDownTimerStart = 0;
 unsigned long tSwitchTimerNow = 0;
 
@@ -337,30 +343,52 @@ void loop() {
 			// channel 6 switch - hold down (high) for >2 seconds to toggle
 			// gearboxControlToggle = LOW == stick; HIGH == switch;
 		
+		if (frameData[6] > propOffSetting && frameData[6] < propOnSetting) {	// if switch not high or low
+				frameData[6] = propMidSetting;									//     set to mid point
+			} 										// -- a bit redundant as this is a switch not proportional
 		tSwitchTimerNow = millis();
-		if (tSwitchDownTimerStart == 0 && frameData[6] <= propOffSetting) {		// start down timmer
+		if (tSwitchDownTimerStart == 0 && frameData[6] <= propOffSetting) {		// start down timer
 			tSwitchDownTimerStart = tSwitchTimerNow;
 		} 
-		if (frameData[6] > propOffSetting && frameData[6] < propOnSetting) {	// force mid point for switch
-				frameData[6] = propMidSetting;
-			} 
-		if (tSwitchDownTimerStart > 0 && frameData[6] == propMidSetting) {
+		if (tSwitchDownTimerStart > 0 && frameData[6] == propMidSetting) {		// timer underway & switch back at middle
 			if (tSwitchTimerNow - tSwitchDownTimerStart > 2000) {				// switch was held for more than 2 seconds
 				gearboxControlToggle = !gearboxControlToggle;					// toggle the gearbox control method
 			}
-			tSwitchDownTimerStart = 0;					// reset down timmer
+			tSwitchDownTimerStart = 0;					// reset down timer because switch back at middle
 		}
 
+<<<<<<< Updated upstream
 		if (gearboxControlToggle) {					//true - gearboxControlToggle = HIGH = using switch
 			if (frameData[7] < propOffSetting) {			// Code if switch being used
 				gearboxGear = 1;
 			} else if (frameData[7] > propOnSetting) {
+=======
+		if (gearboxControlToggle) {					//true - gearboxControlToggle = high = using switch
+                                // Code if switch being used -- Switch = up = 1st = servo ant-clock = gearcontrol forward.
+                                                            //  Switch = down = 3rd = servo clockwise = gearcontrol backward.
+                                                            //      up = 983. 496, down = -12
+			if (frameData[7] < propOffSetting) {
+>>>>>>> Stashed changes
 				gearboxGear = 3;
+			} else if (frameData[7] > propOnSetting) {
+				gearboxGear = 1;
 			} else {
 				gearboxGear = 2;
 			}
 		} else {
+<<<<<<< Updated upstream
 			if (gearboxFromMFUValue < propOffSetting) {		// Code if stick being used
+<<<<<<< Updated upstream
+=======
+=======
+                              // Code if stick being used -- Stick = left = 1st = servo ant-clock = gearcontrol forward.
+                                                          // Stick = right = 3rd = servo clockwise = gearcontrol backward.
+                                                          //      left = 84, 532, right = 984
+			if (gearboxFromMFUValue < propOffSetting) {
+>>>>>>> Stashed changes
+				gearboxGear = 1;
+			} else if (gearboxFromMFUValue > propOnSetting) {
+>>>>>>> Stashed changes
 				gearboxGear = 3;
 			} else if (gearboxFromMFUValue > propOnSetting) {
 				gearboxGear = 1;
@@ -368,10 +396,16 @@ void loop() {
 				gearboxGear = 2;
 			}
 		}
-		if (gearboxGear != gearboxGearOld) {
+		
+		
+		
+		if (gearboxGear != gearboxGearOld) {				// gear being changed
 			gearboxPulseCount = 0;
+      gearboxPulseCount2 = 0;
+			gearboxGearFrom = gearboxGearOld;
 			gearboxGearOld = gearboxGear;
 		}
+<<<<<<< Updated upstream
 		// Put into new gear if throttle open or if going to 2nd gear
 		if (gearboxPulseCount < 10) {
 //			if (throttleValue > throttleReverseValue || throttleValue < throttleForwardValue || gearboxGear == 2) {
@@ -382,6 +416,68 @@ void loop() {
 				delayMicroseconds(500 + (gearboxGear * 500));
 				digitalWrite(gearboxServoPin, LOW); 
 			}
+=======
+<<<<<<< Updated upstream
+		if (gearboxPulseCount < 15) {
+			gearboxGearOld = gearboxGear;
+			gearboxPulseCount += 1;
+			digitalWrite(gearboxServoPin, HIGH); 
+			delayMicroseconds(500 + (gearboxGear * 500));
+=======
+		if (gearboxPulseCount < 25) {						// 17 frames used to set servo position
+										// use a number 1 less that divisible by 3 so shake might work.
+// ************* Removed June 2024
+//			if (throttleValue > throttleReverseValue || throttleValue < throttleForwardValue) gearboxPulseCount += 1;
+															// only set gear if moving
+			gearboxPulseCount += 1;
+			digitalWrite(gearboxServoPin, HIGH); 
+			
+			
+			if (inDelay == 0) {
+  //    Options
+	//			delayMicroseconds(600 + (gearboxGear * 450));		//  1050, 1500, 1950				
+	//			delayMicroseconds(500 + (gearboxGear * 500));		//  1000, 1500, 2000  - this should be correct!
+	//			delayMicroseconds(400 + (gearboxGear * 550));		//   950, 1500, 2050.
+
+/* ************* Removed June 2024
+				if (gearboxGear == 3) {						// to try to shake into gear !!!!
+					if (gearboxPulseCount % 3 != 0) {
+						delayMicroseconds(1000);
+					} else {			
+						delayMicroseconds(700);
+					}
+				} else {
+					delayMicroseconds(500 + (gearboxGear * 500));
+				}
+*/
+//  ****** Added June 24 
+        int gearboxLow = 1000;
+        int gearboxMid = 1550;
+        int gearboxHgh = 2000;
+        
+				if (gearboxGear == 3) delayMicroseconds(gearboxLow);
+				if (gearboxGear == 2 && gearboxGearFrom == 3) {
+                    if (gearboxPulseCount2 < 15) {
+                          delayMicroseconds(1900);                   // long way and back - 1900 - 1500
+                          gearboxPulseCount2 += 1;
+                    } else {
+                          //delayMicroseconds(gearboxMid);
+                          gearboxPulseCount = 0;
+                          gearboxGearFrom = 2;
+                    }
+        }
+				if (gearboxGear == 2 && gearboxGearFrom == 2) delayMicroseconds(gearboxMid);
+				if (gearboxGear == 2 && gearboxGearFrom == 1) delayMicroseconds(gearboxMid);
+				if (gearboxGear == 1) delayMicroseconds(gearboxHgh);
+				
+				//delayMicroseconds(500 + (gearboxGear * 500));
+			} else {
+				delayMicroseconds(inDelay);
+			}
+
+>>>>>>> Stashed changes
+			digitalWrite(gearboxServoPin, LOW); 
+>>>>>>> Stashed changes
 		}
 
 		// =========== Output Video Camera Control - Front/Rear =============
@@ -467,7 +563,7 @@ void loop() {
 			Serial.print(gearboxControlToggle);
 			Serial.print(". Gear: ");
 			Serial.print(gearboxGear);
-			Serial.print(". MFUVal: ");
+			Serial.print(". StickVal: ");
 			Serial.print(gearboxFromMFUValue);
 			Serial.println("");
 		}
