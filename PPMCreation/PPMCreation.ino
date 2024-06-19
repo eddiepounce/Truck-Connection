@@ -85,6 +85,7 @@ int debugMode = false;
 // Channels
 //		1=legs, 2=rear/stop 3=ind, 4=ind, 5=reversing, 6=TSwitch
 //		Throttle monitor.
+int inDelay = 0;		// For debug of gearbox timing - not implemented yet.
 				
 const char channelType[] =   {"-PASSSPPS"};  
 //								12345678	// channel
@@ -343,7 +344,7 @@ void loop() {
 		
 		if (frameData[6] > propOffSetting && frameData[6] < propOnSetting) {	// if switch not high or low
 				frameData[6] = propMidSetting;									//     set to mid point
-			} 										// -- a bit redundant as this is a switch not proportional
+		} 										// -- a bit redundant as this is a switch not proportional
 		tSwitchTimerNow = millis();
 		if (tSwitchDownTimerStart == 0 && frameData[6] <= propOffSetting) {		// start down timer
 			tSwitchDownTimerStart = tSwitchTimerNow;
@@ -388,14 +389,15 @@ void loop() {
 								// (so your don't have to hold the stick over for 1st & 3rd)
 			if (!gearboxShiftStarted && gearboxFromMFUValue < propOffSetting) {			// down
 				gearboxShiftStarted = true;
-				if (gearboxGear == 3) gearboxGear = 2;
 				if (gearboxGear == 2) gearboxGear = 1;
+				if (gearboxGear == 3) gearboxGear = 2;
 			} else if (!gearboxShiftStarted && gearboxFromMFUValue > propOnSetting) {	// up
 				gearboxShiftStarted = true;
-				if (gearboxGear == 1) gearboxGear = 2;
 				if (gearboxGear == 2) gearboxGear = 3;
-			} else {
+				if (gearboxGear == 1) gearboxGear = 2;
+			} else if (gearboxFromMFUValue > propOffSetting && gearboxFromMFUValue < propOnSetting){
 				gearboxShiftStarted = false;
+			}
 // New end
 		}
 		
@@ -435,7 +437,7 @@ void loop() {
         
 				if (gearboxGear == 3) delayMicroseconds(gearboxLow);
 				if (gearboxGear == 2 && gearboxGearFrom == 3) {
-                    if (gearboxPulseCount2 < 15) {
+                    if (gearboxPulseCount2 < 10) {
                           delayMicroseconds(1900);                   // long way and back - 1900 - 1500
                           gearboxPulseCount2 += 1;
                     } else {
