@@ -127,9 +127,9 @@ const int channelSpecialType[MAX_CHANNELS+1] = {0,0,1,2,3,0,0,0,0};  //type
 //				S - 3 = Flash rear running lights with indicator.
 
 // ------- Running Lights ------------------
-const int runningLightsPin1 = 7;		// front running lights - pin# (2 front side & front white marker lights)
-const int runningLightsPin2 = 4;		// Rear Right Side Running Lights - pin#
-const int runningLightsPin3 = 5;		// Rear Left Side Running Lights - pin#
+const int runningLightsFrontPin = 7;		// front running lights - pin# (2 front side & front white marker lights)
+const int runningLightsRearRightPin = 4;		// Rear Right Side Running Lights - pin#
+const int runningLightsRearLeftPin = 5;		// Rear Left Side Running Lights - pin#
 const int runningLightsFlashPeriod = 1000;	// flash sequence every ....
 const int runningLightsFlashInc = 100;		// increment for flash sequence
 int runningLightsFlashPosition = 5;			// where in flash sequence
@@ -331,10 +331,52 @@ void setup() {
 	pinMode(monLED_PIN, OUTPUT);
 	pinMode(legsSensorPin, INPUT);								// Linear Hall Effect Sensor - no pullup needed
 	pinMode(trailerBrakePin, OUTPUT);
+<<<<<<< Updated upstream
 	pinMode(runningLightsPin1, OUTPUT);
 	pinMode(runningLightsPin2, OUTPUT);
 	pinMode(runningLightsPin3, OUTPUT);
 		
+=======
+	pinMode(runningLightsFrontPin, OUTPUT);
+	pinMode(runningLightsRearRightPin, OUTPUT);
+	pinMode(runningLightsRearLeftPin, OUTPUT);
+	
+	bitWrite(TIMSK2, OCIE2A, 0); // disable interrupt
+	// -- set timer2 interrupt  for interrupt timer - too low and the system locks up so min 40?
+	//  timerPrecission is effectively the number of micro seconds between interupts 
+	//	- too quick and processing doesn't finish!!  but the smaller the better for proportional accuracy.
+	TCCR2A = 0;	// set entire TCCR2A register to 0
+	TCCR2B = 0;	// same for TCCR2B
+	TCNT2  = 0;	//initialize counter value to 0
+		// set compare match register
+		//  OCR2A = 200;  // (must be <256)
+	OCR2A = 2*timerPrecission;	//  2 * 40   (must be <256)
+	TCCR2A |= (1 << WGM21);	// turn on CTC mode
+	TCCR2B |= (1 << CS21);    // Set CS21 bit for 8 prescaler;  22 for 64
+//	TIMSK2 |= (1 << OCIE2A);	// enable timer compare interrupt
+//	Don't enable here so timer doesn't start before first frame available
+		//	TIMSK2 &= ~(1 << OCIE2A);	// disable interrupt
+		// bitWrite(TIMSK2, OCIE2A, 0); // disable interrupt 
+		// bitWrite(TIMSK2, OCIE2A, 1); // enable interrupt 	
+			//byte timmer2Save = TIMSK2;	// save interrupt byte (current situation)
+			//TIMSK2 &= ~(1 << OCIE2A);		// disable interrupt
+			//TIMSK2 = timmer2Save;			// restore interrupt byte (old situation)
+
+//	ADMUX = _BV(REFS0) | _BV(MUX3) | _BV(MUX2) | _BV(MUX1);   // setup ADMUX for reading supply power value
+
+/* -- Not needed with cheaper ESC --
+	// Initialise legs so ESC gets a good centre position (else strange things can happen at hookup)
+	int pulseTime = 1500;	// 1.5 millisecond pulses - i.e. mid position
+	int pulseCount = 30; 	// 20+ pulses needed for ESC centre initialisation
+	for (int i=1; i <= pulseCount; i++) {
+		digitalWrite(channelPIN[1], HIGH); 	// set channel 1 (legs) high
+		delayMicroseconds(pulseTime);		//	for xx time
+		digitalWrite(channelPIN[1], LOW);	// set channel 1 (legs) low
+		delay(18);							// wait for inter pulse gap
+	}
+*/
+	
+>>>>>>> Stashed changes
 	// Initialise PPM input interrupt system
 	pinMode(inputPin, PPM_INPUT_TYPE);  
 	attachInterrupt(digitalPinToInterrupt(inputPin), interruptReadChannels, PULSE_EDGE);
@@ -377,7 +419,7 @@ void loop() {
 		//--Monitoring--
 		monLED_CycleCount++;
 		monTimeOfLastCycle = millis();
-		mon1=true; mon2=true; mon3=true; mon4=true;
+		mon0=true; mon1=true; mon2=true; mon3=true; mon4=true;
 		//--Monitoring--end
 		debugCycleTime = 1000;  // reset debugCycleTime to 1 second 
 								// (set very slow if connection lost (no frames seen)
@@ -452,15 +494,15 @@ void loop() {
 				unsigned long localTime = millis();
 				if (channelTimeCopy[outChannel] > SWITCH_MID_SETTING_A 
 							&& channelTimeCopy[outChannel] < SWITCH_MID_SETTING_B) {
-					if (localTime - runningLightsFlashStart > 2000) digitalWrite(runningLightsPin1, HIGH);  // set on
-					if (localTime - turnLeftStart > 500) digitalWrite(runningLightsPin2, HIGH);  // set on
-					if (localTime - turnRightStart > 500) digitalWrite(runningLightsPin3, HIGH);  // set on
+					if (localTime - runningLightsFlashStart > 2000) digitalWrite(runningLightsFrontPin, HIGH);  // set on
+					if (localTime - turnLeftStart > 500) digitalWrite(runningLightsRearRightPin, HIGH);  // set on
+					if (localTime - turnRightStart > 500) digitalWrite(runningLightsRearLeftPin, HIGH);  // set on
 				} 
 				//special off if at low  (can't use and "else" here - channel has 3 positions)
 				if (channelTimeCopy[outChannel] < SWITCH_OFF_SETTING) {
-					if (localTime - runningLightsFlashStart > 2000) digitalWrite(runningLightsPin1, LOW);  // set off
-					digitalWrite(runningLightsPin2, LOW);  // set off
-					digitalWrite(runningLightsPin3, LOW);  // set off
+					if (localTime - runningLightsFlashStart > 2000) digitalWrite(runningLightsFrontPin, LOW);  // set off
+					digitalWrite(runningLightsRearRightPin, LOW);  // set off
+					digitalWrite(runningLightsRearLeftPin, LOW);  // set off
 				}
 			}
 			if (channelPIN[outChannel] > 0) {
@@ -587,21 +629,21 @@ void loop() {
 					if (!digitalRead(channelDirectionPIN[outChannel])) digitalWrite(channelDirectionPIN[outChannel], HIGH); //on
 					// --- Special Type 2&3 ---
 					if (channelSpecialType[outChannel] == 2) {
-						digitalWrite(runningLightsPin2, HIGH);
+						digitalWrite(runningLightsRearRightPin, HIGH);
 						turnLeftStart = millis();
 					}
 					if (channelSpecialType[outChannel] == 3) {
-						digitalWrite(runningLightsPin3, HIGH);
+						digitalWrite(runningLightsRearLeftPin, HIGH);
 						turnRightStart = millis();
 					}
 				} else {
 					if (digitalRead(channelDirectionPIN[outChannel])) digitalWrite(channelDirectionPIN[outChannel], LOW); //off
 					// --- Special Type 2&3 ---
 					if (channelSpecialType[outChannel] == 2) {
-						if (millis() - turnLeftStart < 100) digitalWrite(runningLightsPin2, LOW);
+						if (millis() - turnLeftStart < 100) digitalWrite(runningLightsRearRightPin, LOW);
 					}
 					if (channelSpecialType[outChannel] == 3) {
-						if (millis() - turnRightStart < 100) digitalWrite(runningLightsPin3, LOW);
+						if (millis() - turnRightStart < 100) digitalWrite(runningLightsRearLeftPin, LOW);
 					}
 				}
 			}
@@ -694,10 +736,14 @@ void loop() {
 			break;
 		}
 		outChannel++;					// inc. channel being processed for output.
+<<<<<<< Updated upstream
 
 		if  (outChannel > maxChannels) {		// finish processing if required
 			// nothing
 		}
+=======
+										// will do this for each channel - 1 at a time to allow finished processing below!
+>>>>>>> Stashed changes
 	}
 
 	// ----------------------------------------------------------------------
@@ -715,9 +761,17 @@ void loop() {
 		if (runningLightsFlashCurrent > 
 					runningLightsFlashPeriod + (runningLightsFlashInc * runningLightsFlashPosition)) {
 			if ((runningLightsFlashPosition % 2)) {		// if odd
+<<<<<<< Updated upstream
 				digitalWrite(runningLightsPin1, HIGH);
 			} else {
 				digitalWrite(runningLightsPin1, LOW);
+=======
+//Serial.println("--Brake2 ");
+				digitalWrite(runningLightsFrontPin, HIGH);
+			} else {
+//Serial.println("--Brake3 ");
+				digitalWrite(runningLightsFrontPin, LOW);
+>>>>>>> Stashed changes
 			}
 			runningLightsFlashPosition++;
 		}
@@ -732,10 +786,37 @@ void loop() {
 	// No input for 0.5	sec (some frames seen)
 	if (mon0 && monLED_CycleCount > 50 && (monTimeElapse) > 500) {  // 50 frames seen + 0.5 sec 
 		mon0 = false; mon1=true;
-		// lost input signal - apply trailer brakes
+		// ------------------------------------------
+		// ---- Reset some stuff if input lost!! ----
+		//-------------------------------------------
+		// Apply trailer brakes
 		if (setTrailerBrake(true) && tSwitchValue[MAX_tSwitch-1]) 
 								Serial.println("##### Trailer Brake On as lost connection"); //Debug on
-//		}
+/*
+		// Turn channels etc. off
+		for (int i = 1; i <= maxChannels; i++){
+			if (channelPIN[i] > 0) {
+				digitalWrite(channelPIN[i], LOW); 
+			}
+			if (channelDirectionPIN1[i] > 0) {
+				digitalWrite(channelDirectionPIN1[i], LOW); 
+			}
+			if (channelDirectionPIN2[i] > 0) {
+				digitalWrite(channelDirectionPIN2[i], LOW); 
+			}
+		}
+		for (int i = 1; i <= MAX_tSwitch; i++){
+			if (tSwitchPIN[i] > 0) {
+				digitalWrite(tSwitchPIN[i], LOW); 
+			}
+		} 
+		digitalWrite(rearLegsDirection, LOW);             // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++  crazy
+                                    // rearLegsRightPin    rearLegsLeftPin ????????????
+		digitalWrite(runningLightsFrontPin, LOW); 
+		digitalWrite(runningLightsRearRightPin, LOW); 
+		digitalWrite(runningLightsRearLeftPin, LOW); 
+		//-------------------------------------------		
+*/
 	}
 	// No input for 1 sec (some frames seen)
 	if (mon1 && monLED_CycleCount > 50 && (monTimeElapse) > 1000) {  // 50 frames + 1 sec 
@@ -878,6 +959,10 @@ void loop() {
 				detachInterrupt(digitalPinToInterrupt(inputPin));	// turn off input
 				setTrailerBrake(false);			// set trailer brake off
 				bitWrite(TIMSK2, OCIE2A, 0);	// disable output timer
+	//  Turn things off!!!
+				// ------------
+	
+	//  Flash all the lights
 				for (int i=0; i<2000; i++) {
 					digitalWrite(6, HIGH);	// Rear/Stop Lights
 					digitalWrite(8, HIGH);	// Indicator Lights
