@@ -135,11 +135,8 @@ volatile static bool gearboxFromMFUState = LOW;		// store last value for timing 
 
 volatile static unsigned long switchStartTime = 0;	// channelPIN[7] = A0
 //		used to store a time (micros) during input for pin change interrupt
-<<<<<<< Updated upstream
-bool gearboxControlToggle = HIGH;			//LOW == stick; HIGH == switch;
-=======
-bool gearboxControlToggle = HIGH;       //  Start using switch ****
->>>>>>> Stashed changes
+bool gearboxControlToggle = HIGH;       //  Start using switch -- LOW == stick; HIGH == switch;
+//bool gearboxControlToggle = LOW;       //  Start using Stick 
 unsigned long tSwitchDownTimerStart = 0;
 unsigned long tSwitchTimerNow = 0;
 
@@ -357,18 +354,11 @@ void loop() {
 			tSwitchDownTimerStart = 0;					// reset down timer because switch back at middle
 		}
 
-<<<<<<< Updated upstream
-		if (gearboxControlToggle) {					//true - gearboxControlToggle = HIGH = using switch
-			if (frameData[7] < propOffSetting) {			// Code if switch being used
-				gearboxGear = 1;
-			} else if (frameData[7] > propOnSetting) {
-=======
 		if (gearboxControlToggle) {					//true - gearboxControlToggle = high = using switch
                                 // Code if switch being used -- Switch = up = 1st = servo ant-clock = gearcontrol forward.
                                                             //  Switch = down = 3rd = servo clockwise = gearcontrol backward.
                                                             //      up = 983. 496, down = -12
 			if (frameData[7] < propOffSetting) {
->>>>>>> Stashed changes
 				gearboxGear = 3;
 			} else if (frameData[7] > propOnSetting) {
 				gearboxGear = 1;
@@ -376,22 +366,14 @@ void loop() {
 				gearboxGear = 2;
 			}
 		} else {
-<<<<<<< Updated upstream
-			if (gearboxFromMFUValue < propOffSetting) {		// Code if stick being used
-<<<<<<< Updated upstream
-=======
-=======
-                              // Code if stick being used -- Stick = left = 1st = servo ant-clock = gearcontrol forward.
-                                                          // Stick = right = 3rd = servo clockwise = gearcontrol backward.
-                                                          //      left = 84, 532, right = 984
+
+                        // Code if stick being used -- Stick = left = 1st = servo ant-clock = gearcontrol forward.
+                                        // Stick = right = 3rd = servo clockwise = gearcontrol backward.
+                                        //      left = 84, 532, right = 984
 			if (gearboxFromMFUValue < propOffSetting) {
->>>>>>> Stashed changes
 				gearboxGear = 1;
 			} else if (gearboxFromMFUValue > propOnSetting) {
->>>>>>> Stashed changes
 				gearboxGear = 3;
-			} else if (gearboxFromMFUValue > propOnSetting) {
-				gearboxGear = 1;
 			} else {
 				gearboxGear = 2;
 			}
@@ -405,25 +387,7 @@ void loop() {
 			gearboxGearFrom = gearboxGearOld;
 			gearboxGearOld = gearboxGear;
 		}
-<<<<<<< Updated upstream
-		// Put into new gear if throttle open or if going to 2nd gear
-		if (gearboxPulseCount < 10) {
-//			if (throttleValue > throttleReverseValue || throttleValue < throttleForwardValue || gearboxGear == 2) {
-				// because motor doesn't turn till quite a way off neutral, throttleValue 's are as follows
-			if ((throttleValue > 750 && reversing) || (throttleValue < 300) || gearboxGear == 2) {
-				gearboxPulseCount += 1;
-				digitalWrite(gearboxServoPin, HIGH); 
-				delayMicroseconds(500 + (gearboxGear * 500));
-				digitalWrite(gearboxServoPin, LOW); 
-			}
-=======
-<<<<<<< Updated upstream
-		if (gearboxPulseCount < 15) {
-			gearboxGearOld = gearboxGear;
-			gearboxPulseCount += 1;
-			digitalWrite(gearboxServoPin, HIGH); 
-			delayMicroseconds(500 + (gearboxGear * 500));
-=======
+
 		if (gearboxPulseCount < 25) {						// 17 frames used to set servo position
 										// use a number 1 less that divisible by 3 so shake might work.
 // ************* Removed June 2024
@@ -475,9 +439,7 @@ void loop() {
 				delayMicroseconds(inDelay);
 			}
 
->>>>>>> Stashed changes
 			digitalWrite(gearboxServoPin, LOW); 
->>>>>>> Stashed changes
 		}
 
 		// =========== Output Video Camera Control - Front/Rear =============
