@@ -125,8 +125,8 @@ const int ctrlCabLightingPin = 9;			// turns cab lighting on/off
 const int gearboxFromMFUPin = 10;			// PWM from MFU to feed to gearbox servo
 const int gearboxServoPin = 11;				// PWM to Gearbox Servo
 int gearboxGear = 2;
-int gearboxGearOld = 2;
-int gearboxGearFrom = 2;
+int gearboxGearOld = 1;               // Don't set at 0; valid values - 1 - 1st, 2 = 2nd, 3 = 3rd.
+int gearboxGearFrom = 1;
 int gearboxPulseCount = 100;						// controls output to servo and number of pulses to send (high value so no initialisation)
 int gearboxPulseCount2 = 0;           // so we can go too far and back
 volatile static unsigned long gearboxStartTime = 0;
@@ -342,16 +342,17 @@ void loop() {
 			// channel 6 switch - hold down (high) for >2 seconds to toggle
 			// gearboxControlToggle = LOW == stick; HIGH == switch;
 		
-		if (frameData[6] > propOffSetting && frameData[6] < propOnSetting) {	// if switch not high or low
-				frameData[6] = propMidSetting;									//     set to mid point
+		if (frameData[6] > propOffSetting && frameData[6] < propOnSetting) { // if switch not high or low
+				frameData[6] = propMidSetting;								 //     set to mid point
 		} 										// -- a bit redundant as this is a switch not proportional
 		tSwitchTimerNow = millis();
-		if (tSwitchDownTimerStart == 0 && frameData[6] <= propOffSetting) {		// start down timer
+		if (tSwitchDownTimerStart == 0 && frameData[6] <= propOffSetting) {	// start down timer
 			tSwitchDownTimerStart = tSwitchTimerNow;
 		} 
-		if (tSwitchDownTimerStart > 0 && frameData[6] == propMidSetting) {		// timer underway & switch back at middle
-			if (tSwitchTimerNow - tSwitchDownTimerStart > 2000) {				// switch was held for more than 2 seconds
-				gearboxControlToggle = !gearboxControlToggle;					// toggle the gearbox control method
+		if (tSwitchDownTimerStart > 0 && frameData[6] == propMidSetting) {	
+															// timer underway & switch back at middle
+			if (tSwitchTimerNow - tSwitchDownTimerStart > 2000) { // switch was held for more than 2s
+				gearboxControlToggle = !gearboxControlToggle;	  // toggle the gearbox control method
 			}
 			tSwitchDownTimerStart = 0;					// reset down timer because switch back at middle
 		}
@@ -408,7 +409,7 @@ void loop() {
 			gearboxGearOld = gearboxGear;
 		}
 
-		if (gearboxPulseCount < 17) {						// 17 frames used to set servo position
+		if (gearboxPulseCount < 25) {						// 17 frames used to set servo position
 										// use a number 1 less that divisible by 3 so shake might work.
 // ************* Removed June 2024
 //			if (throttleValue > throttleReverseValue || throttleValue < throttleForwardValue) gearboxPulseCount += 1;
@@ -437,7 +438,7 @@ void loop() {
         
 				if (gearboxGear == 3) delayMicroseconds(gearboxLow);
 				if (gearboxGear == 2 && gearboxGearFrom == 3) {
-                    if (gearboxPulseCount2 < 10) {
+                    if (gearboxPulseCount2 < 15) {
                           delayMicroseconds(1900);                   // long way and back - 1900 - 1500
                           gearboxPulseCount2 += 1;
                     } else {
