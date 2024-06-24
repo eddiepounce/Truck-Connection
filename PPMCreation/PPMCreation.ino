@@ -97,7 +97,7 @@ const char channelType[] =   {"-PASSSPPS"};
 
 const int channelPIN[maxChannels+1] = {0,2,A3,4,5,6,3,A0,0};		// channel input pin
 //										 1  2 3 4 5 6  7 8  // channel
-volatile static int	frameData[maxChannels+1] = {0,0,0,0,0,0,0,498,499};
+volatile static int	frameData[maxChannels+1] = {500,500,500,500,500,500,500,498,499};
 //		0 - 1000 microS							  1 2 3 4 5 6 7 8  //channel
 //volatile static unsigned long propInputTime[maxChannels+1] = {0,0,0,0,0,0,0,0,0};
 volatile static unsigned long propInputTime1 = 0;
@@ -125,10 +125,10 @@ const int ctrlCabLightingPin = 9;			// turns cab lighting on/off
 const int gearboxFromMFUPin = 10;			// PWM from MFU to feed to gearbox servo
 const int gearboxServoPin = 11;				// PWM to Gearbox Servo
 int gearboxGear = 2;
-int gearboxGearOld = 1;               // Don't set at 0; valid values - 1 - 1st, 2 = 2nd, 3 = 3rd.
-int gearboxGearFrom = 1;
-int gearboxPulseCount = 100;						// controls output to servo and number of pulses to send (high value so no initialisation)
-int gearboxPulseCount2 = 0;           // so we can go too far and back
+int gearboxGearOld = 1;             // Don't set at 0; valid values - 1 - 1st, 2 = 2nd, 3 = 3rd.
+int gearboxPulseCount = 100;		// controls output to servo and number of pulses to send (high value so no initialisation)
+//int gearboxGearFrom = 1;  	    	// so we can go too far and come back
+//int gearboxPulseCount2 = 0;       	// so we can go too far and come back
 volatile static unsigned long gearboxStartTime = 0;
 //		used to store a time (micros) during input for pin change interrupt
 volatile static int gearboxFromMFUValue = 500;			// initial value - mid point
@@ -404,21 +404,21 @@ void loop() {
 		
 		if (gearboxGear != gearboxGearOld) {				// gear being changed
 			gearboxPulseCount = 0;
-      gearboxPulseCount2 = 0;
-			gearboxGearFrom = gearboxGearOld;
+//			gearboxPulseCount2 = 0;
+//			gearboxGearFrom = gearboxGearOld;
 			gearboxGearOld = gearboxGear;
 		}
 
 		if (gearboxPulseCount < 25) {						// 17 frames used to set servo position
 										// use a number 1 less that divisible by 3 so shake might work.
-// ************* Removed June 2024
+// **** Removed June 2024   not needed
 //			if (throttleValue > throttleReverseValue || throttleValue < throttleForwardValue) gearboxPulseCount += 1;
 															// only set gear if moving
 			gearboxPulseCount += 1;
 			digitalWrite(gearboxServoPin, HIGH); 
 			
 			
-			if (inDelay == 0) {
+			if (inDelay == 0) {				// For debug of gearbox timing - not implemented yet - from keyboard!!
 
 /* ************* Removed June 2024  (didn't work anyway)
 				if (gearboxGear == 3) {						// to try to shake into gear !!!!
@@ -430,16 +430,17 @@ void loop() {
 				} else {
 					delayMicroseconds(500 + (gearboxGear * 500));
 				}
-*/
-//  ****** Added June 24 
+*/// ************* Removed June 2024 END
+/*//  ****** Added June 24  - 3rd to 2nd - go too far (nearly to 1st) and back 
+										// but not needed now original spring back in gearbox!!
         int gearboxLow = 1000;
-        int gearboxMid = 1550;
+        int gearboxMid = 1500;
         int gearboxHgh = 2000;
         
 				if (gearboxGear == 3) delayMicroseconds(gearboxLow);
 				if (gearboxGear == 2 && gearboxGearFrom == 3) {
                     if (gearboxPulseCount2 < 15) {
-                          delayMicroseconds(1900);                   // long way and back - 1900 - 1500
+                          delayMicroseconds(1700);                   // long way and back - 1900 - 1500
                           gearboxPulseCount2 += 1;
                     } else {
                           //delayMicroseconds(gearboxMid);
@@ -449,16 +450,16 @@ void loop() {
         }
 				if (gearboxGear == 2 && gearboxGearFrom == 2) delayMicroseconds(gearboxMid);
 				if (gearboxGear == 2 && gearboxGearFrom == 1) delayMicroseconds(gearboxMid);
+				if (gearboxGear == 2) delayMicroseconds(gearboxMid);
 				if (gearboxGear == 1) delayMicroseconds(gearboxHgh);
-// ****** Added June 24 END		
-/*    Options
-		delayMicroseconds(600 + (gearboxGear * 450));		//  1050, 1500, 1950				
-		delayMicroseconds(500 + (gearboxGear * 500));		//  1000, 1500, 2000  - this should be correct!
-		delayMicroseconds(400 + (gearboxGear * 550));		//   950, 1500, 2050.
-*/	
-				//delayMicroseconds(500 + (gearboxGear * 500));
+*///  ****** Added June 24 END		
+//    Options
+//		delayMicroseconds(500 + (gearboxGear * 500));		//  1000, 1500, 2000  -  correct but wrong way round!
+		int gearboxGearServoValue[4] = {1500, 2000, 1500, 1000};
+				// delayMicroseconds(500 + (gearboxGear * 500));
+				delayMicroseconds(gearboxGearServoValue[gearboxGear]);
 			} else {
-				delayMicroseconds(inDelay);   // for debug - from keyboard!!
+				delayMicroseconds(inDelay);   // For debug of gearbox timing - not implemented yet.
 			}
 
 			digitalWrite(gearboxServoPin, LOW); 
