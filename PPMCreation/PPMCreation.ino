@@ -361,14 +361,14 @@ void loop() {
                                 // Code if switch being used -- Switch = up = 1st = servo ant-clock = gearcontrol forward.
                                                             //  Switch = down = 3rd = servo clockwise = gearcontrol backward.
                                                             //      up = 983. 496, down = -12
-			if (frameData[7] < propOffSetting) {
+			if (frameData[7] < propOffSetting) {	// *** Switch ***
 				gearboxGear = 3;
 			} else if (frameData[7] > propOnSetting) {
 				gearboxGear = 1;
 			} else {
 				gearboxGear = 2;
 			}
-		} else {
+		} else {									// *** Stick ***
 /*  Changing way stick works - use as up/down mover instead of being in direct control
 
                         // Code if stick being used -- Stick = left = 1st = servo ant-clock = gearcontrol forward.
@@ -390,12 +390,14 @@ void loop() {
 								// (so your don't have to hold the stick over for 1st & 3rd)
 			if (!gearboxShiftStarted && gearboxFromMFUValue < propOffSetting) {			// down
 				gearboxShiftStarted = true;
-				if (gearboxGear == 2) gearboxGear = 1;
-				if (gearboxGear == 3) gearboxGear = 2;
+				//if (gearboxGear == 2) gearboxGear = 1;
+				//if (gearboxGear == 3) gearboxGear = 2;
+				gearboxGear -= 1;						// code to allow retry to get into gear
 			} else if (!gearboxShiftStarted && gearboxFromMFUValue > propOnSetting) {	// up
 				gearboxShiftStarted = true;
-				if (gearboxGear == 2) gearboxGear = 3;
-				if (gearboxGear == 1) gearboxGear = 2;
+				//if (gearboxGear == 2) gearboxGear = 3;
+				//if (gearboxGear == 1) gearboxGear = 2;
+				gearboxGear += 1;						// code to allow retry to get into gear
 			} else if (gearboxFromMFUValue > propOffSetting && gearboxFromMFUValue < propOnSetting){
 				gearboxShiftStarted = false;
 			}
@@ -403,10 +405,12 @@ void loop() {
 		}
 		
 		if (gearboxGear != gearboxGearOld) {				// gear being changed
+			if (gearboxGear < 1) gearboxGear = 1;		// code to allow retry to get into gear
+			if (gearboxGear > 3) gearboxGear = 3;		// code to allow retry to get into gear
 			gearboxPulseCount = 0;
 //			gearboxPulseCount2 = 0;
 //			gearboxGearFrom = gearboxGearOld;
-			gearboxGearOld = gearboxGear;
+			gearboxGearOld = gearboxGear;			
 		}
 
 		if (gearboxPulseCount < 25) {						// 17 frames used to set servo position
