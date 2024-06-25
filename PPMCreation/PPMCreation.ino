@@ -24,7 +24,7 @@ Create pulse stream - 500us pulses with time between rising edges = RC PWM time 
 	D4			Ch3		Indicator (uses trailer connector on MFU)
 	D5			Ch4		Indicator (uses trailer connector on MFU)
 	D6	Red		Ch5		Reversing Lighting (via Opto Isolator in LED circuit)
-	D7	Green			Camera Control - Selects forward or reverse camera				#########  Moved from A0
+	D7	Green			Camera Control - Selects forward or reverse camera			#########  Moved from A0
 	D8	Yellow			Throttle monitoring (PWM input)
 	D9	Purple	PWM 	Cab Lighting	
 	D10	Light Grey		Gearbox Servo from MFU  (28awg ribbon #2)
@@ -72,7 +72,7 @@ enableInterrupt(inputPin, interruptReadChannels, PULSE_EDGE);
 */
 
 #include <Arduino.h>
-int inDelay = 0;
+
 // -------------------------
 //  Constants and variables to control functionality
 //--------------------------
@@ -85,6 +85,7 @@ int debugMode = false;
 // Channels
 //		1=legs, 2=rear/stop 3=ind, 4=ind, 5=reversing, 6=TSwitch
 //		Throttle monitor.
+int inDelay = 0;		// For debug of gearbox timing - not implemented yet.
 				
 const char channelType[] =   {"-PASSSPPS"};  
 //								12345678	// channel
@@ -96,7 +97,7 @@ const char channelType[] =   {"-PASSSPPS"};
 
 const int channelPIN[maxChannels+1] = {0,2,A3,4,5,6,3,A0,0};		// channel input pin
 //										 1  2 3 4 5 6  7 8  // channel
-volatile static int	frameData[maxChannels+1] = {0,0,0,0,0,0,0,498,499};
+volatile static int	frameData[maxChannels+1] = {500,500,500,500,500,500,500,498,499};
 //		0 - 1000 microS							  1 2 3 4 5 6 7 8  //channel
 //volatile static unsigned long propInputTime[maxChannels+1] = {0,0,0,0,0,0,0,0,0};
 volatile static unsigned long propInputTime1 = 0;
@@ -112,28 +113,32 @@ const int ctrlSideLights = A4;
 const int cameraControlPin = 7;			// Selects forward or reverse camera
 const int cameraPowerPin = A5;				// Power control for cameras
 const int throttlePin = 8;					// Throttle monitoring pin
-const int throttleReverseValue = 600;		// if more - set motion to Reverse
-const int throttleForwardValue = 450;		// if less - set motion to Forward
+const int throttleReverseValue = 550;		// if more - set motion to Reverse  // for camera
+const int throttleForwardValue = 450;		// if less - set motion to Forward  // for camera
 volatile static unsigned long throttleStartTime = 0;
 //		used to store a time (micros) during input for pin change interrupt
 volatile static int throttleValue = 500;	// initial value - mid point
 volatile static bool throttleState = LOW;
 bool braked = false;			// have we braked after going forward?
 bool reversing = false;			// are we now reversing?
-const int ctrlCabLightingPin = 9;				// turns cab lighting on/off
-const int gearboxFromMFUPin = 10;				// PWM from MFU to feed to gearbox servo
-const int gearboxServoPin = 11;					// PWM to Gearbox Servo
+const int ctrlCabLightingPin = 9;			// turns cab lighting on/off
+const int gearboxFromMFUPin = 10;			// PWM from MFU to feed to gearbox servo
+const int gearboxServoPin = 11;				// PWM to Gearbox Servo
 int gearboxGear = 2;
-int gearboxGearOld = 0;
-int gearboxPulseCount = 20;						// controls output to servo and number of pulses to send
+int gearboxGearOld = 1;             // Don't set at 0; valid values - 1 - 1st, 2 = 2nd, 3 = 3rd.
+int gearboxPulseCount = 100;		// controls output to servo and number of pulses to send (high value so no initialisation)
+//int gearboxGearFrom = 1;  	    	// so we can go too far and come back
+//int gearboxPulseCount2 = 0;       	// so we can go too far and come back
 volatile static unsigned long gearboxStartTime = 0;
 //		used to store a time (micros) during input for pin change interrupt
 volatile static int gearboxFromMFUValue = 500;			// initial value - mid point
-volatile static bool gearboxFromMFUState = LOW;
+volatile static bool gearboxFromMFUState = LOW;		// store last value for timing input
 
 volatile static unsigned long switchStartTime = 0;	// channelPIN[7] = A0
 //		used to store a time (micros) during input for pin change interrupt
-bool gearboxControlToggle = HIGH;
+//bool gearboxControlToggle = HIGH;       //  Start using switch -- LOW == stick; HIGH == switch;
+bool gearboxControlToggle = LOW;       //  Start using Stick 
+bool gearboxShiftStarted = false;		// Make sure only 1 gear change per stick movement.
 unsigned long tSwitchDownTimerStart = 0;
 unsigned long tSwitchTimerNow = 0;
 
@@ -192,7 +197,7 @@ void pciSetup(byte pin) {
 
 
 ISR (PCINT0_vect) {
-    // For PCINT of pins D8 to D13 - Port B		(8 & 10 used)				//=======================================
+    // For PCINT of pins D8 to D13 - Port B		(8 & 10 used)	
 	//  if (PINB & B00000001)  Pin8		throttlePin
 	//  if (PINB & B00000100)  Pin10	gearboxFromMFUPin
 	
@@ -252,7 +257,7 @@ void setup() {
 	digitalWrite(cameraControlPin, LOW);	// default is front Camera
 	pinMode(throttlePin, INPUT);
 		// enable interrupt for pin...  -- Pin Change Interrupt (PCI)
-	pciSetup(throttlePin);									// ##########################################
+	pciSetup(throttlePin);
 		//PCICR  |= B00000001;			//"PCIE0" enabeled (PCINT0 to PCINT7)
 		//PCMSK0 |= B00000001;			//"PCINT0" enabeled -> D8 will trigger interrupt
 	// setup for switch on Rx6
@@ -313,6 +318,12 @@ void loop() {
 	// every 20 milliSeconds
 	nowTime = millis();
 	if (nowTime - frameTime > 20) {
+		
+		//########################################################################################		
+		//if (throttleValue > propMaxSetting+100 and back to mid
+		// change  5thWheelActive  state
+		//if !5thWheelActive  put -300 in output.  (gives a 700 pulse for channel)
+
 		for (int i = 1; i <= maxChannels; i++){
 			digitalWrite(outPin, HIGH);		// ouput the channel pulse (500uS)
 			delayMicroseconds(framePulseAndAddition);
@@ -328,86 +339,149 @@ void loop() {
 
 		// =========== Gearbox Control =============	
 			// decide if stick or switch being used for Gearbox control
-			// channel 6 switch - hold down (high) for 3 seconds to toggle
+			// channel 6 switch - hold down (high) for >2 seconds to toggle
 			// gearboxControlToggle = LOW == stick; HIGH == switch;
 		
+		if (frameData[6] > propOffSetting && frameData[6] < propOnSetting) { // if switch not high or low
+				frameData[6] = propMidSetting;								 //     set to mid point
+		} 										// -- a bit redundant as this is a switch not proportional
 		tSwitchTimerNow = millis();
-		if (tSwitchDownTimerStart == 0 && frameData[6] <= propOffSetting) {		// start down timmer
+		if (tSwitchDownTimerStart == 0 && frameData[6] <= propOffSetting) {	// start down timer
 			tSwitchDownTimerStart = tSwitchTimerNow;
 		} 
-		if (frameData[6] > propOffSetting && frameData[6] < propOnSetting) {	// force mid point for switch
-				frameData[6] = propMidSetting;
-			} 
-		if (tSwitchDownTimerStart > 0 && frameData[6] == propMidSetting) {
-			if (tSwitchTimerNow - tSwitchDownTimerStart > 2000) {				// switch was held for more than 2 seconds
-				gearboxControlToggle = !gearboxControlToggle;					// toggle the gearbox control method
+		if (tSwitchDownTimerStart > 0 && frameData[6] == propMidSetting) {	
+															// timer underway & switch back at middle
+			if (tSwitchTimerNow - tSwitchDownTimerStart > 2000) { // switch was held for more than 2s
+				gearboxControlToggle = !gearboxControlToggle;	  // toggle the gearbox control method
 			}
-			tSwitchDownTimerStart = 0;					// reset down timmer
+			tSwitchDownTimerStart = 0;					// reset down timer because switch back at middle
 		}
 
-		if (gearboxControlToggle) {					//true - gearboxControlToggle = high = useing switch
-			if (frameData[7] < propOffSetting) {			// Code if switch being used
-				gearboxGear = 1;
+		if (gearboxControlToggle) {					//true - gearboxControlToggle = high = using switch
+                                // Code if switch being used -- Switch = up = 1st = servo ant-clock = gearcontrol forward.
+                                                            //  Switch = down = 3rd = servo clockwise = gearcontrol backward.
+                                                            //      up = 983. 496, down = -12
+			if (frameData[7] < propOffSetting) {	// *** Switch ***
+				gearboxGear = 3;
 			} else if (frameData[7] > propOnSetting) {
-				gearboxGear = 3;
-			} else {
-				gearboxGear = 2;
-			}
-		} else {
-			if (gearboxFromMFUValue < propOffSetting) {		// Code if stick being used
-				gearboxGear = 3;
-			} else if (gearboxFromMFUValue > propOnSetting) {
 				gearboxGear = 1;
 			} else {
 				gearboxGear = 2;
 			}
+		} else {									// *** Stick ***
+/*  Changing way stick works - use as up/down mover instead of being in direct control
+
+                        // Code if stick being used -- Stick = left = 1st = servo ant-clock = gearcontrol forward.
+                                        // Stick = right = 3rd = servo clockwise = gearcontrol backward.
+                                        //      left = 84, 532, right = 984
+			if (gearboxFromMFUValue < propOffSetting) {
+				gearboxGear = 1;
+			} else if (gearboxFromMFUValue > propOnSetting) {
+				gearboxGear = 3;
+			} else {
+				gearboxGear = 2;
+			}
+*/
+// New code June 2024
+	// bool gearboxControlToggle = LOW; - to start with stick  - line 138/139
+	// bool gearboxShiftStarted = false; - new so only 1 change per stick move  - line 140
+								// Code if stick being used -- Stick = left = down
+															// Stick = right = up
+								// (so your don't have to hold the stick over for 1st & 3rd)
+			if (!gearboxShiftStarted && gearboxFromMFUValue < propOffSetting) {			// down
+				gearboxShiftStarted = true;
+				//if (gearboxGear == 2) gearboxGear = 1;
+				//if (gearboxGear == 3) gearboxGear = 2;
+				gearboxGear -= 1;						// code to allow retry to get into gear
+			} else if (!gearboxShiftStarted && gearboxFromMFUValue > propOnSetting) {	// up
+				gearboxShiftStarted = true;
+				//if (gearboxGear == 2) gearboxGear = 3;
+				//if (gearboxGear == 1) gearboxGear = 2;
+				gearboxGear += 1;						// code to allow retry to get into gear
+			} else if (gearboxFromMFUValue > propOffSetting && gearboxFromMFUValue < propOnSetting){
+				gearboxShiftStarted = false;
+			}
+// New end
 		}
-		if (gearboxGear != gearboxGearOld) {
+		
+		if (gearboxGear != gearboxGearOld) {				// gear being changed
+			if (gearboxGear < 1) gearboxGear = 1;		// code to allow retry to get into gear
+			if (gearboxGear > 3) gearboxGear = 3;		// code to allow retry to get into gear
 			gearboxPulseCount = 0;
-			gearboxGearOld = gearboxGear;
+//			gearboxPulseCount2 = 0;
+//			gearboxGearFrom = gearboxGearOld;
+			gearboxGearOld = gearboxGear;			
 		}
-		if (gearboxPulseCount < 17) {		// use a numer 1 less that divisible by 3.
-			if (throttleValue > throttleReverseValue || throttleValue < throttleForwardValue) gearboxPulseCount += 1;
-//			gearboxPulseCount += 1;
+
+		if (gearboxPulseCount < 25) {						// 17 frames used to set servo position
+										// use a number 1 less that divisible by 3 so shake might work.
+// **** Removed June 2024   not needed
+//			if (throttleValue > throttleReverseValue || throttleValue < throttleForwardValue) gearboxPulseCount += 1;
+															// only set gear if moving
+			gearboxPulseCount += 1;
 			digitalWrite(gearboxServoPin, HIGH); 
 			
 			
-			if (inDelay == 0) {
-	//			delayMicroseconds(500 + (gearboxGear * 500));		// this should be correct
-	//			delayMicroseconds(400 + (gearboxGear * 550));		//  950, 1500, 2050.
-				if (gearboxGear == 3) {
+			if (inDelay == 0) {				// For debug of gearbox timing - not implemented yet - from keyboard!!
+
+/* ************* Removed June 2024  (didn't work anyway)
+				if (gearboxGear == 3) {						// to try to shake into gear !!!!
 					if (gearboxPulseCount % 3 != 0) {
-						delayMicroseconds(2000);
-					} else {
-						delayMicroseconds(1700);
+						delayMicroseconds(1000);
+					} else {			
+						delayMicroseconds(700);
 					}
 				} else {
 					delayMicroseconds(500 + (gearboxGear * 500));
 				}
-	
+*/// ************* Removed June 2024 END
+/*//  ****** Added June 24  - 3rd to 2nd - go too far (nearly to 1st) and back 
+										// but not needed now original spring back in gearbox!!
+        int gearboxLow = 1000;
+        int gearboxMid = 1500;
+        int gearboxHgh = 2000;
+        
+				if (gearboxGear == 3) delayMicroseconds(gearboxLow);
+				if (gearboxGear == 2 && gearboxGearFrom == 3) {
+                    if (gearboxPulseCount2 < 15) {
+                          delayMicroseconds(1700);                   // long way and back - 1900 - 1500
+                          gearboxPulseCount2 += 1;
+                    } else {
+                          //delayMicroseconds(gearboxMid);
+                          gearboxPulseCount = 0;
+                          gearboxGearFrom = 2;
+                    }
+        }
+				if (gearboxGear == 2 && gearboxGearFrom == 2) delayMicroseconds(gearboxMid);
+				if (gearboxGear == 2 && gearboxGearFrom == 1) delayMicroseconds(gearboxMid);
+				if (gearboxGear == 2) delayMicroseconds(gearboxMid);
+				if (gearboxGear == 1) delayMicroseconds(gearboxHgh);
+*///  ****** Added June 24 END		
+//    Options
+//		delayMicroseconds(500 + (gearboxGear * 500));		//  1000, 1500, 2000  -  correct but wrong way round!
+		int gearboxGearServoValue[4] = {1500, 2000, 1500, 1000};
+				// delayMicroseconds(500 + (gearboxGear * 500));
+				delayMicroseconds(gearboxGearServoValue[gearboxGear]);
 			} else {
-				delayMicroseconds(inDelay);
+				delayMicroseconds(inDelay);   // For debug of gearbox timing - not implemented yet.
 			}
-
 
 			digitalWrite(gearboxServoPin, LOW); 
 		}
-		
-		
 
 		// =========== Output Video Camera Control - Front/Rear =============
 			// cameraControlPin - controlled by monitoring Throttle
 		if (throttleValue > throttleReverseValue) {
 			if (reversing) {
-				digitalWrite(cameraControlPin, HIGH);	// rear camera
-				digitalWrite(ctrlCabLightingPin, LOW);			// moving so cab light off
+				digitalWrite(cameraControlPin, HIGH);		// rear camera
+				digitalWrite(ctrlCabLightingPin, LOW);		// moving so cab light off
 				digitalWrite(cameraPowerPin, HIGH);			// and cameras on
 				if (debugMode) {
 					Serial.print(" Reversing. Throttle value: ");
 					Serial.println(throttleValue);
 				}
 			} else {
-				braked = true;			// means camera dosn't change if just braking.
+				braked = true;			// camera doesn't change if just braking.
 			}
 		}
 		if (throttleValue < throttleReverseValue and braked == true) {
@@ -478,7 +552,7 @@ void loop() {
 			Serial.print(gearboxControlToggle);
 			Serial.print(". Gear: ");
 			Serial.print(gearboxGear);
-			Serial.print(". MFUVal: ");
+			Serial.print(". StickVal: ");
 			Serial.print(gearboxFromMFUValue);
 			Serial.println("");
 		}
@@ -494,15 +568,7 @@ void loop() {
 			if (monSerialRead == "1") {gearboxGear = 1; gearboxPulseCount = 0;}
 			if (monSerialRead == "2") {gearboxGear = 2; gearboxPulseCount = 0;}
 			if (monSerialRead == "3") {gearboxGear = 3; gearboxPulseCount = 0;}
-			
-			if (monSerialRead.toInt() > 900 && monSerialRead.toInt() < 2100) {
-				inDelay = monSerialRead.toInt();
-				gearboxPulseCount = 0;
-				Serial.print("inDelay: ");
-				Serial.println(inDelay);
-			}
-			if (monSerialRead == "0") {inDelay = 0; gearboxGear = 2; gearboxPulseCount = 0;}
-			
+						
 			if (monSerialRead == "DebugON" || monSerialRead == "d") {
 				Serial.println("Debug is now turned on");
 				debugMode = true;
