@@ -320,6 +320,7 @@ void loop() {
 	if (nowTime - frameTime > 20) {
 		
 		//########################################################################################		
+		//   ** not sure why needed - not used.
 		//if (throttleValue > propMaxSetting+100 and back to mid
 		// change  5thWheelActive  state
 		//if !5thWheelActive  put -300 in output.  (gives a 700 pulse for channel)
