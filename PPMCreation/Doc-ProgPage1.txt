@@ -1,68 +1,56 @@
-
-		// =========== Gearbox Control =============	
-			// decide if stick or switch being used for Gearbox control
-			// channel 6 switch - hold down (high) for 3 seconds to toggle
-			// gearboxControlToggle = LOW == stick; HIGH == switch;
-		
-
-
-
-
-
 /*
 Make a PPM stream from PWM's and Lighting connections on RC Controlled truck.
 Copyright (C) 2021  Eddie Pounce
 
 Create pulse stream - 500us pulses with time between rising edges = RC PWM time (1-2ms).
 
-	Channel
-		1		Proportional	5th Wheel Lock Servo - to drive trailer legs (PWM input from MFU)
-		2		Analogue		Rear/Stop Lights (uses trailer connector on MFU)
-		3		On/Off			Indicator	 (uses trailer connector on MFU)
-		4		On/Off			Indicator	 (uses trailer connector on MFU)
-		5		On/Off			Reversing Lighting (via Opto Isolator in LED circuit)
-		6		Proportional	3 way switch (centreSprung) - to control Toggle Switch settings on Trailer
-												(PWM input from receiver)
-		7		Proportional	3 way switch (3pos) - to control Gearbox  (PWM input from receiver)
-												
-					MFU = Multi Function Unit - Motor, 5th Wheel Lock, Lights & Sound Controller
+	Channel		Inputs
+		1		Proportional	5th Wheel Lock Servo - for trailer legs (PWM from MFU)
+		2		Analogue		Rear/Stop Lights(uses trailer connector on MFU)
+		3		Analogue		Indicator	 	(uses trailer connector on MFU)
+		4		Analogue		Indicator	 	(uses trailer connector on MFU)
+		5		On/Off			Reversing Lighting (via Throttle monitoring - sticky ON in Reverse)
+		6		Proportional	3 way sw (centre) - for Toggle Switch on Trailer
+									and for Gearbox control method	(PWM from receiver)
+		7		Proportional	3 way sw (3pos) - for Gearbox		(PWM from receiver)
+	Internal use inputs
+		-		Proportional	Throttle Monitor		(PWM from receiver)
+		-		Proportional	Gearbox Servo			(PWM from MFU)
+				
+	MFU = Multi Function Unit - Motor, 5th Wheel Lock, Lights & Sound Controller
 
 	=============== MPU - mini processor unit - Arduino Nano ===================
-	Gnd	Black			# IR Emitter
-	D2			Ch1		Copy of 5th Wheel Lock Servo - to drive trailer legs (PWM input)
-	D3	Green	Ch6		Rx5 - 3 way switch - to control Toggle Switch settings on Trailer  (10k resistor)
-												(PWM input from receiver)
-	D4			Ch3		Indicator (uses trailer connector on MFU)
-	D5			Ch4		Indicator (uses trailer connector on MFU)
-	D6	Red		Ch5		Reversing Lighting (via Opto Isolator in LED circuit)
-	D7	Green			Camera Control - Selects forward or reverse camera				#########  Moved from A0
-	D8	Yellow			Throttle monitoring (PWM input)
-	D9	Purple	PWM 	Cab Lighting	
-	D10	Light Grey		Gearbox Servo from MFU  (28awg ribbon #2)
-	D11	Dark Purple		Feed to Gearbox Servo	(28awg ribbon #3)
-	D12	White			# IR Emitter
-	A0	White (10k resistor)	From Rx6 - 3 pos switch.  (28awg ribbon #1)  [Frame position 7]
-	A1	Black			RightIndRepeater control
-	A2	Red				LeftIndRepeater control
-	A3	Yellow	Ch2		Rear/Stop Lights (uses trailer connector on MFU) 
-												(converts to High/Mid/Low)
-	A4	White			SideLights control
-	A5	Orange			Power switch control for Camera's 
-	5V	Red		Power	(from MFU from Copy of 5th Wheel Lock Servo)
-	Gnd	Black	Power	(from MFU from Copy of 5th Wheel Lock Servo)
-	=================
+	Gnd	Black			# IR Emitter (Trailer feed)
+I	D2	Yellow	Ch1	10k	Copy of 5th Wheel Lock Servo - for trailer legs (10k resistor)
+																(PWM from MFU)
+I	D3	Green	Ch6	10k	Rx5 - 3 way switch - for Toggle Switch settings on Trailer  (10k resistor)
+								and for Gearbox control method	(PWM from receiver)
+O	D4	White			# IR Emitter (Trailer feed)
+I	D5	Red		Ch5		Input NOT USED - Reversing Light via Opto Isolator in LED circuit(pull-up needed)
+O	D6	Blue			--reserved for gear display	(28awg ribbon #a)
+O	D7	Green			--reserved for gear display	(28awg ribbon #b)
+O	D8	Purple	PWM? 	Cab Lighting Control (takes 0.43mA)
+I	D9	Yellow			Throttle monitoring (PWM from receiver)  (chip output may be broken / may be not)
+I	D10	Light Grey		Gearbox Servo (PWM from MFU)	(28awg ribbon #2)
+O	D11	Dark Purple		Feed to Gearbox Servo			(28awg ribbon #3)
+O	D12	Green			Camera Control - Selects forward or reverse camera
+I	A0	White 	Ch7	10k	Rx6 - 3 pos switch				(28awg ribbon #1)  (10k resistor) 
+																(PWM from receiver)
+O	A1	Black			RightIndRepeater control
+O	A2	Red				LeftIndRepeater control
+I	A3	Blue	Ch2		Rear/Stop Lights input (uses trailer connector on MFU)(pull-up needed)
+											(Analog - converts to High/Mid/Low)
+O	A4	White			SideLights control
+O	A5	Orange			Power switch control for Camera's  (** Not really Needed **)
+I	A6	Yellow	Ch3		Indicator input (uses trailer connector on MFU) (pull-up needed:hardwired)
+l	(Analog Input Ony)						(Analog - converts to High/Mid/Low)
+I	A7	Red		Ch4		Indicator input (uses trailer connector on MFU)	(pull-up needed:hardwired)
+	(Analog Input Only)						(Analog - converts to High/Mid/Low)
 	
-//#include <Arduino.h>
-#include <EnableInterrupt.h>
+	5V	Red		Power	Copy of 5th Wheel Lock Servo)	(power from MFU)
+	Gnd	Black	Power	Copy of 5th Wheel Lock Servo)	(power from MFU)
 
-void interruptReadChannels() {
-	nowTime = micros();			// get current time - microseconds
-	diffTime = nowTime - oldTime;	// calculate pulse length (time since last rising edge!)
-	if (diffTime > minProportionalValue) {		// sort of debounce
-
-setup	
-enableInterrupt(inputPin, interruptReadChannels, PULSE_EDGE);
-
+	=================
     Copyright
 
     This program is free software: you can redistribute it and/or modify
@@ -79,37 +67,35 @@ enableInterrupt(inputPin, interruptReadChannels, PULSE_EDGE);
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 	84339861+eddiepounce@users.noreply.github.com
-
 */
 
 #include <Arduino.h>
-int inDelay = 0;
+
 // -------------------------
 //  Constants and variables to control functionality
 //--------------------------
-const int outPin 			= 12;	// pin for PPM stream
+const int outPin 			= 4;	// pin for PPM stream
 const int maxChannels		= 8;	// channels to create 
 const int framePulseAndAddition = 500;  
 				// length of pulses and half the additional time to make PPM give 1 to 2 mS
 int debugMode = false;
 //int debugMode = true;		// print frame values
+
 // Channels
-//		1=legs, 2=rear/stop 3=ind, 4=ind, 5=reversing, 6=TSwitch
-//		Throttle monitor.
+//		1=legs, 2=rear/stop 3=ind, 4=ind, 5=reversing, 6=TSwitch, 7=TrailerRamps
 				
-const char channelType[] =   {"-PASSSPPS"};  
+const char channelType[] =   {"-PAAASPPS"};  
 //								12345678	// channel
 //				P = Proportional (PWM) input
-//				A = Analogue input to create 3 state channel (rear/stop lights)
-//				//a = Analogue input to create 2 state channel 
-//				S = Switch input - light on or off
-//				T = Testing (analogue) - put input value in output array
+//				A = Analogue input to create 3 state channel (e.g rear/stop lights)
+//				S = Digital input - on or off
 
-const int channelPIN[maxChannels+1] = {0,2,A3,4,5,6,3,A0,0};		// channel input pin
-//										 1  2 3 4 5 6  7 8  // channel
-volatile static int	frameData[maxChannels+1] = {0,0,0,0,0,0,0,498,499};
-//		0 - 1000 microS							  1 2 3 4 5 6 7 8  //channel
-//volatile static unsigned long propInputTime[maxChannels+1] = {0,0,0,0,0,0,0,0,0};
+const int channelPIN[maxChannels+1] = {0,2,A3,A6,A7,0,3,A0,0};	// channel input pin
+//										 1  2  3  4 5 6  7 8	// channel
+const char channelPINpullup[] =   {"--P--P---"};// P = internal pull-up needed
+//									-12345678  // channel
+volatile static int	frameData[maxChannels+1] = {500,500,500,500,500,500,500,498,499};
+//		0 - 1000 microS								  1   2   3   4    5   6   7   8  //channel
 volatile static unsigned long propInputTime1 = 0;
 volatile static unsigned long propInputTime6 = 0;
 //		used to store a time (micros) during input for proportional channels (ext interrupts)
@@ -120,33 +106,39 @@ const int ctrlLeftIndRepeater = A2;
 const int ctrlSideLights = A4;
 
 // Video Camera Control / Trottle monitoring
-const int cameraControlPin = 7;			// Selects forward or reverse camera
+const int cameraControlPin = 12;			// Selects forward or reverse camera
 const int cameraPowerPin = A5;				// Power control for cameras
-const int throttlePin = 8;					// Throttle monitoring pin
-const int throttleReverseValue = 600;		// if more - set motion to Reverse
-const int throttleForwardValue = 450;		// if less - set motion to Forward
+const int throttlePin = 9;					// Throttle monitoring pin
+const int throttleReverseValue = 550;		// if more - set motion to Reverse  // for camera
+const int throttleForwardValue = 450;		// if less - set motion to Forward  // for camera
 volatile static unsigned long throttleStartTime = 0;
 //		used to store a time (micros) during input for pin change interrupt
 volatile static int throttleValue = 500;	// initial value - mid point
 volatile static bool throttleState = LOW;
 bool braked = false;			// have we braked after going forward?
 bool reversing = false;			// are we now reversing?
-const int ctrlCabLightingPin = 9;				// turns cab lighting on/off
-const int gearboxFromMFUPin = 10;				// PWM from MFU to feed to gearbox servo
-const int gearboxServoPin = 11;					// PWM to Gearbox Servo
+const int ctrlCabLightingPin = 8;			// turns cab lighting on/off
+const int gearboxFromMFUPin = 10;			// PWM from MFU to feed to gearbox servo
+const int gearboxServoPin = 11;				// PWM to Gearbox Servo
 int gearboxGear = 2;
-int gearboxGearOld = 0;
-int gearboxPulseCount = 20;						// controls output to servo and number of pulses to send
+int gearboxGearOld = 1;             // Don't set at 0; valid values - 1 - 1st, 2 = 2nd, 3 = 3rd.
+int gearboxPulseCount = 100;		// controls output to servo and number of pulses to send (high value so no initialisation)
 volatile static unsigned long gearboxStartTime = 0;
 //		used to store a time (micros) during input for pin change interrupt
 volatile static int gearboxFromMFUValue = 500;			// initial value - mid point
-volatile static bool gearboxFromMFUState = LOW;
+volatile static bool gearboxFromMFUState = LOW;		// store last value for timing input
+int gearboxInDelay = 0;		// For debug of gearbox timing input from keyboard.
 
 volatile static unsigned long switchStartTime = 0;	// channelPIN[7] = A0
 //		used to store a time (micros) during input for pin change interrupt
-bool gearboxControlToggle = HIGH;
+bool gearboxControlToggle = LOW;       //  Start using Stick -- LOW == stick; HIGH == switch;
+bool gearboxShiftStarted = false;		// Make sure only 1 gear change per stick movement.
 unsigned long tSwitchDownTimerStart = 0;
 unsigned long tSwitchTimerNow = 0;
+// Outputs to show what gear we are in
+const int gearboxShowGear1 = 6;
+const int gearboxShowGear2 = 7;
+
 
 
 // --------------------------------
@@ -157,8 +149,10 @@ const int propOffSetting = 300;
 const int propMidSetting =500;		
 const int propOnSetting = 700;
 const int propMaxSetting = 1000;
-const int analogOffValue = 900;		// for Analogue input (inverted)
-const int analogOnValue = 350;		// for Analogue input (inverted)
+//const int analogOffValue = 900;		// for Analogue input (inverted)
+//const int analogOnValue = 300;		// for Analogue input (inverted)
+const int analogOffValue = 300;		// for Analogue input
+const int analogOnValue = 900;		// for Analogue input
 
 
 // -------------------------

@@ -106,13 +106,13 @@ const char channelType[] =   {"-PlSSSTSS"};
 //			5 = Reversing Light
 //			6 = ToggleSwitch
 
-const char invertChannel[MAX_CHANNELS+1] = {"---IIII--"}; 	// Invert or Normal ( I or - )
+const char invertChannel[MAX_CHANNELS+1] = {"------I--"}; 	// Invert or Normal ( I or - )
 //											  12345678	// channel
 const int channelPIN[MAX_CHANNELS+1] = {0,A4,6,0,0,0,0,0,0};	// channel pin
 //		Proportional output - PWM		   1 2 3 4 5 6  7  8 //channel
 const int channelDirectionPIN[MAX_CHANNELS+1] = {0,0,0,9,8,11,0,0,0};	// direction of channel pin 
 //		Used for lights - turn PWM into on/off	   1 2 3 4  5 6 7 8	//channel
-const int channelTimeLimit[MAX_CHANNELS+1] = {0,3000,0,0,0,0,0,0,0};		//millis (1000 = 1 second)
+const int channelTimeLimit[MAX_CHANNELS+1] = {0,3500,0,0,0,0,0,0,0};		//millis (1000 = 1 second)
 //const int channelTimeLimit[MAX_CHANNELS+1] = {0,0,0,0,0,0,0,0,0};
 //		How long channel can stay not centered	   1 2 3 4 5 6 7 8 //channel
 const int channelRateLimit[MAX_CHANNELS+1] = {0,300,500,500,500,500,500,500,500};	//0-500 for proportional
@@ -128,7 +128,7 @@ const int channelSpecialType[MAX_CHANNELS+1] = {0,0,1,2,3,0,0,0,0};  //type
 
 // ------- Running Lights ------------------
 const int runningLightsFrontPin = 7;		// front running lights - pin# (2 front side & front white marker lights)
-const int runningLightsRearRightPin = 4;		// Rear Right Side Running Lights - pin#
+const int runningLightsRearRightPin = 4;	// Rear Right Side Running Lights - pin#
 const int runningLightsRearLeftPin = 5;		// Rear Left Side Running Lights - pin#
 const int runningLightsFlashPeriod = 1000;	// flash sequence every ....
 const int runningLightsFlashInc = 100;		// increment for flash sequence
@@ -142,7 +142,9 @@ unsigned long turnRightStart = 0;
 const int trailerLegsChannel = 1;
 bool legsDirectionUp;
 const int legsSensorPin = A1;
-const int legsSensorDownValue = 860;
+const int legsSensorDownValue = 850;	//  (Changes quickly from 616 to 844)
+int legsSensorVal = 0;
+
 
 // ------- Trailer Brake ------------------
 const int trailerBrakePin = A5;
@@ -329,17 +331,18 @@ void setup() {
 		}
 	} 
 	pinMode(monLED_PIN, OUTPUT);
-	pinMode(legsSensorPin, INPUT);								// Linear Hall Effect Sensor - no pullup needed
+	pinMode(legsSensorPin, INPUT);					// Linear Hall Effect Sensor - no pullup needed
 	pinMode(trailerBrakePin, OUTPUT);
-<<<<<<< Updated upstream
-	pinMode(runningLightsPin1, OUTPUT);
-	pinMode(runningLightsPin2, OUTPUT);
-	pinMode(runningLightsPin3, OUTPUT);
-		
-=======
 	pinMode(runningLightsFrontPin, OUTPUT);
 	pinMode(runningLightsRearRightPin, OUTPUT);
 	pinMode(runningLightsRearLeftPin, OUTPUT);
+	digitalWrite(runningLightsFrontPin, LOW); 
+	digitalWrite(runningLightsRearRightPin, LOW); 
+	digitalWrite(runningLightsRearLeftPin, LOW); 
+
+	// *** Turn on Brake Lights so we know power is on ***   Ch2
+	digitalWrite(channelPIN[2], HIGH); 
+	
 	
 	bitWrite(TIMSK2, OCIE2A, 0); // disable interrupt
 	// -- set timer2 interrupt  for interrupt timer - too low and the system locks up so min 40?
@@ -376,7 +379,6 @@ void setup() {
 	}
 */
 	
->>>>>>> Stashed changes
 	// Initialise PPM input interrupt system
 	pinMode(inputPin, PPM_INPUT_TYPE);  
 	attachInterrupt(digitalPinToInterrupt(inputPin), interruptReadChannels, PULSE_EDGE);
@@ -401,7 +403,10 @@ void loop() {
 		outChannel = 1; 
 //	------------
 		// Adjust legs value so that it doesn't wine when legs not in use.
-		channelTime[1] = channelTime[1]-60;		// Feb 2023
+//		channelTime[1] = channelTime[1]-60;		// Feb 2023
+//		or
+		if (channelTime[1] > PULSE_LENGTH_MID - 100 
+				&& channelTime[1] < PULSE_LENGTH_MID + 100) channelTime[1] = PULSE_LENGTH_MID;		
 		// Also Leg Max at 200 is not enough for motor to turn so ratchet clicks - now at 300
 //	------------
 		channelTimeCopy[0] = channelTime[0];
@@ -458,8 +463,8 @@ void loop() {
 			if (channelPIN[outChannel] > 0) {
 				//--check for time limit
 				if (channelTimeLimit[outChannel] > 0) {		//is there a limit
-					if (channelTimeCopy[outChannel] > SWITCH_MID_SETTING_A 
-								&& channelTimeCopy[outChannel] < SWITCH_MID_SETTING_B) {  //in centre (off)?
+					if (channelTimeCopy[outChannel] > SWITCH_OFF_SETTING
+								&& channelTimeCopy[outChannel] < SWITCH_ON_SETTING) {  //in centre (off)?
 						channelTimeLimitStart[outChannel] = millis();  // init the start time
 					} else {
 						//is limit exceeded
@@ -492,8 +497,8 @@ void loop() {
 			if (channelSpecialType[outChannel] == 1) {
 				//special on if at middle
 				unsigned long localTime = millis();
-				if (channelTimeCopy[outChannel] > SWITCH_MID_SETTING_A 
-							&& channelTimeCopy[outChannel] < SWITCH_MID_SETTING_B) {
+				if (channelTimeCopy[outChannel] > SWITCH_OFF_SETTING
+							&& channelTimeCopy[outChannel] < SWITCH_ON_SETTING) {  //in centre (off)?
 					if (localTime - runningLightsFlashStart > 2000) digitalWrite(runningLightsFrontPin, HIGH);  // set on
 					if (localTime - turnLeftStart > 500) digitalWrite(runningLightsRearRightPin, HIGH);  // set on
 					if (localTime - turnRightStart > 500) digitalWrite(runningLightsRearLeftPin, HIGH);  // set on
@@ -510,8 +515,8 @@ void loop() {
 				//		[- could be off/low or on/high (if >PULSE_LENGTH_MIN or >SWITCH_ON_SETTING)]
 				//--check for time limit
 				if (channelTimeLimit[outChannel] > 0) {		//is there a limit
-					if (channelTimeCopy[outChannel] > SWITCH_MID_SETTING_A 
-							&& channelTimeCopy[outChannel] < SWITCH_MID_SETTING_B) {  //in centre (off)?
+					if (channelTimeCopy[outChannel] > SWITCH_OFF_SETTING
+								&& channelTimeCopy[outChannel] < SWITCH_ON_SETTING) {  //in centre (off)?
 						channelTimeLimitStart[outChannel] = millis();  // init the start time
 					} else {
 						//is limit exceeded
@@ -569,24 +574,28 @@ void loop() {
 				legsDirectionUp = false;
 			}
 			if (channelPIN[outChannel] > 0) {
-				if (outChannel == trailerLegsChannel && legsDirectionUp) {			// if legs going up set brakes OFF
+				if (outChannel == trailerLegsChannel && legsDirectionUp) {	// if legs going up set brakes OFF
 					if (setTrailerBrake(false) && tSwitchValue[MAX_tSwitch-1]) 
 											Serial.println("##### Trailer Brake Off when Legs going up"); //Debug on
 				}
 				// Check for legs fully down - if so stop - using Linear Hall Effect Sensor
 				if (outChannel == trailerLegsChannel && !legsDirectionUp) {		// legs going down
 					channelTimeLimitStart[outChannel] = millis();  // re-init the start time so time limit not used on down
-					//Serial.println(analogRead(legsSensorPin)); 
-					if (analogRead(legsSensorPin) > legsSensorDownValue) {		// legs fully down
-						channelTimeCopy[outChannel] = PULSE_LENGTH_MID;			// force stick position to centre (off)
+					legsSensorVal = analogRead(legsSensorPin);
+					if (legsSensorVal > legsSensorDownValue) {				// legs fully down
+						//Serial.print("Legs Sensor: ");
+						//Serial.println(legsSensorVal);
+						channelTimeCopy[outChannel] = PULSE_LENGTH_MID;		// force stick to centre (off)
 						if (setTrailerBrake(true) && tSwitchValue[MAX_tSwitch-1])	// set brakes ON
 												Serial.println("##### Trailer Brake On when Legs Down"); //if Debug on
 					}
 				}
 				//--check for time limit
 				if (channelTimeLimit[outChannel] > 0) {		//is there a limit
-					if (channelTimeCopy[outChannel] > SWITCH_MID_SETTING_A 
-								&& channelTimeCopy[outChannel] < SWITCH_MID_SETTING_B) {  //in centre (off)?
+//					if (channelTimeCopy[outChannel] > SWITCH_MID_SETTING_A
+//								&& channelTimeCopy[outChannel] < SWITCH_MID_SETTING_B) {  //in centre (off)?
+					if (channelTimeCopy[outChannel] > SWITCH_OFF_SETTING
+								&& channelTimeCopy[outChannel] < SWITCH_ON_SETTING) {  //in centre (off)?
 						channelTimeLimitStart[outChannel] = millis();  // init the start time
 					} else {	// not in centre (off)
 						if (millis()-channelTimeLimitStart[outChannel] > channelTimeLimit[outChannel]) {	// is limit exceeded
@@ -653,8 +662,8 @@ void loop() {
 			if (channelPIN[outChannel] > 0) {
 				//--check for time limit
 				if (channelTimeLimit[outChannel] > 0) {		//is there a limit
-					if (channelTimeCopy[outChannel] > SWITCH_MID_SETTING_A 
-							&& channelTimeCopy[outChannel] < SWITCH_MID_SETTING_B) {  //in centre (off)?
+					if (channelTimeCopy[outChannel] > SWITCH_OFF_SETTING
+								&& channelTimeCopy[outChannel] < SWITCH_ON_SETTING) {  //in centre (off)?
 						channelTimeLimitStart[outChannel] = millis();  // init the start time
 					} else {
 						//is limit exceeded
@@ -694,12 +703,14 @@ void loop() {
 			} 
 			tSwitchTimerNow = millis();
 			//  ---- Switch No./Counter ----
-			if (tSwitchTimerStartOFF > 0 && channelTimeCopy[outChannel] == PULSE_LENGTH_MID) {	// switch pulsed OFF
-				if (tSwitchTimerNow - tSwitchTimerStartOFF < tSwitchSetTime) {			// short OFF = next switch
+			if (tSwitchTimerStartOFF > 0 && channelTimeCopy[outChannel] == PULSE_LENGTH_MID) {	
+																				// switch pulsed OFF
+				if (tSwitchTimerNow - tSwitchTimerStartOFF < tSwitchSetTime) {	// short OFF = next switch
 					tSwitchNo++;
 					if (tSwitchNo > MAX_tSwitch) tSwitchNo = 1;		//loop round
-				} else {																// long OFF = reset switch counter
+				} else {											// long OFF = reset switch counter
 					tSwitchNo = 1;
+					resetSketch(); // and reboot software!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 				}
 				tSwitchTimerStartOFF = 0;							// empty OFF timmer!
 			} 
@@ -736,20 +747,18 @@ void loop() {
 			break;
 		}
 		outChannel++;					// inc. channel being processed for output.
-<<<<<<< Updated upstream
 
 		if  (outChannel > maxChannels) {		// finish processing if required
 			// nothing
 		}
-=======
 										// will do this for each channel - 1 at a time to allow finished processing below!
->>>>>>> Stashed changes
+
 	}
 
 	// ----------------------------------------------------------------------
 	// --  Trailer Brake flasher  --
 	// ----------------------------------------------------------------------
-	if (trailerBrakeOn) {
+/*	if (trailerBrakeOn) {
 		if (runningLightsFlashPosition == 5) {
 			runningLightsFlashPosition = 0;
 			runningLightsFlashStart = millis();
@@ -761,21 +770,14 @@ void loop() {
 		if (runningLightsFlashCurrent > 
 					runningLightsFlashPeriod + (runningLightsFlashInc * runningLightsFlashPosition)) {
 			if ((runningLightsFlashPosition % 2)) {		// if odd
-<<<<<<< Updated upstream
-				digitalWrite(runningLightsPin1, HIGH);
-			} else {
-				digitalWrite(runningLightsPin1, LOW);
-=======
-//Serial.println("--Brake2 ");
 				digitalWrite(runningLightsFrontPin, HIGH);
 			} else {
-//Serial.println("--Brake3 ");
 				digitalWrite(runningLightsFrontPin, LOW);
->>>>>>> Stashed changes
 			}
 			runningLightsFlashPosition++;
 		}
 	}
+*/
 
 	// ----------------------------------------------------------------------
 	// --  Monitoring  --
@@ -784,25 +786,22 @@ void loop() {
 	monTimeElapse = millis() - monTimeOfLastCycle;  
 
 	// No input for 0.5	sec (some frames seen)
-	if (mon0 && monLED_CycleCount > 50 && (monTimeElapse) > 500) {  // 50 frames seen + 0.5 sec 
+	if (mon0 && monLED_CycleCount > 10 && (monTimeElapse) > 500) {  // 50 frames seen + 0.5 sec 
 		mon0 = false; mon1=true;
 		// ------------------------------------------
 		// ---- Reset some stuff if input lost!! ----
 		//-------------------------------------------
 		// Apply trailer brakes
 		if (setTrailerBrake(true) && tSwitchValue[MAX_tSwitch-1]) 
-								Serial.println("##### Trailer Brake On as lost connection"); //Debug on
-/*
+								Serial.println("##### Trailer Brake On as lost connection"); //Debug on		
+
 		// Turn channels etc. off
 		for (int i = 1; i <= maxChannels; i++){
 			if (channelPIN[i] > 0) {
 				digitalWrite(channelPIN[i], LOW); 
 			}
-			if (channelDirectionPIN1[i] > 0) {
-				digitalWrite(channelDirectionPIN1[i], LOW); 
-			}
-			if (channelDirectionPIN2[i] > 0) {
-				digitalWrite(channelDirectionPIN2[i], LOW); 
+			if (channelDirectionPIN[i] > 0) {
+				digitalWrite(channelDirectionPIN[i], LOW); 
 			}
 		}
 		for (int i = 1; i <= MAX_tSwitch; i++){
@@ -810,13 +809,12 @@ void loop() {
 				digitalWrite(tSwitchPIN[i], LOW); 
 			}
 		} 
-		digitalWrite(rearLegsDirection, LOW);             // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++  crazy
-                                    // rearLegsRightPin    rearLegsLeftPin ????????????
 		digitalWrite(runningLightsFrontPin, LOW); 
 		digitalWrite(runningLightsRearRightPin, LOW); 
 		digitalWrite(runningLightsRearLeftPin, LOW); 
-		//-------------------------------------------		
-*/
+		// *** Turn on Brake Lights so we know power is on ***   Ch2
+		digitalWrite(channelPIN[2], HIGH); 
+
 	}
 	// No input for 1 sec (some frames seen)
 	if (mon1 && monLED_CycleCount > 50 && (monTimeElapse) > 1000) {  // 50 frames + 1 sec 
@@ -1048,6 +1046,9 @@ void loop() {
 				Serial.print(";  ");
 			}							
 			Serial.println("");	
+			Serial.print("Legs position value: "); 
+			Serial.println(analogRead(legsSensorPin)); 
+
 		}
 	}
 }

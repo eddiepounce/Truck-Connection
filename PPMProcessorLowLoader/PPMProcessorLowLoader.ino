@@ -110,12 +110,12 @@ const char channelType[] =   {"-SsSSSTSS"}; // for LowLoader
 //			6 = ToggleSwitch
 //			7 = RampMotor
 
-const char invertChannel[MAX_CHANNELS+1] = {"---IIII--"}; 	// Invert or Normal ( I or - )
+const char invertChannel[MAX_CHANNELS+1] = {"------I--"}; 	// Invert or Normal ( I or - )
 //											  12345678	// channel
 const int channelPIN[MAX_CHANNELS+1] = {0,0,0,0,0,0,0,0,0};	// channel pin
 //		Proportional output - PWM		  1 2 3 4 5 6 7 8 //channel
 const int channelDirectionPIN1[MAX_CHANNELS+1] = {0,A0,6,3,4,7,0,A3,0};	//  channel direction pin 
-//		Used to turn PWM values into on/off	  		1 2 3 4 5 6 7  8	//channel
+//		Used to turn PWM values into on/off	  		 1 2 3 4 5 6 7  8	//channel
 const int channelDirectionPIN2[MAX_CHANNELS+1] = {0,A1,5,0,0,0,0,A2,0};	// 2nd channel direction pin 
 //		Used to turn PWM values into on/off	  		 1 2 3 4 5 6 7  8	//channel
 const int channelTimeLimit[MAX_CHANNELS+1] = {0,0,0,0,0,0,0,0,0};		//millis (1000 = 1 second)
@@ -306,7 +306,7 @@ void setup() {
 //			channelTimeCopy[i] = PULSE_LENGTH_MIN; 
 //			statusChannelTimeCopy[i] = PULSE_LENGTH_MIN;
 //		} else {
-			channelTime[i] = PULSE_LENGTH_MID;
+			channelTime[i] = PULSE_LENGTH_MID;				// This puts brake lights on for Ch2
 			channelTimeCopy[i] = PULSE_LENGTH_MID; 
 			statusChannelTimeCopy[i] = PULSE_LENGTH_MID; 
 //		}
@@ -337,6 +337,9 @@ void setup() {
 	pinMode(runningLightsFrontPin, OUTPUT);	
 	pinMode(runningLightsRearRightPin, OUTPUT);
 	pinMode(runningLightsRearLeftPin, OUTPUT);
+	digitalWrite(runningLightsFrontPin, LOW); 
+	digitalWrite(runningLightsRearRightPin, LOW); 
+	digitalWrite(runningLightsRearLeftPin, LOW); 
 
 	for (int i=1; i <= 10; i++) {						// initialise Rear Legs position
 		digitalWrite(rearLegsLeftPin, HIGH); 
@@ -347,7 +350,10 @@ void setup() {
 		digitalWrite(rearLegsRightPin, LOW); 
 		delay(18);
 	}
-		
+	
+	// *** Turn on Rear Lights so we know power is on ***   Ch2 Pin1
+	// Setting Channel 2 = PULSE_LENGTH_MID does this.	 
+
 	// Initialise PPM input interrupt system
 	pinMode(inputPin, PPM_INPUT_TYPE);  
 	attachInterrupt(digitalPinToInterrupt(inputPin), interruptReadChannels, PULSE_EDGE);
@@ -385,7 +391,8 @@ void loop() {
 		//--Monitoring--
 		monLED_CycleCount++;
 		monTimeOfLastCycle = millis();
-		mon0 = true; mon1=true; mon2=true; mon3=true; mon4=true;
+//		mon0 = true; mon1=true; mon2=true; mon3=true; mon4=true;
+		mon0 = true; mon1=false; mon2=false; mon3=false; mon4=false;
 		//--Monitoring--end
 		debugCycleTime = 1000;  // reset debugCycleTime to 1 second 
 								// (set very slow if connection lost (no frames seen)
@@ -732,12 +739,14 @@ void loop() {
 			} 
 			tSwitchTimerNow = millis();
 			//  ---- Switch No./Counter ----
-			if (tSwitchTimerStartOFF > 0 && channelTimeCopy[outChannel] == PULSE_LENGTH_MID) {	// switch pulsed UP
-				if (tSwitchTimerNow - tSwitchTimerStartOFF < tSwitchSetTime) {			// short UP = next switch
+			if (tSwitchTimerStartOFF > 0 && channelTimeCopy[outChannel] == PULSE_LENGTH_MID) {	
+																				// switch pulsed UP
+				if (tSwitchTimerNow - tSwitchTimerStartOFF < tSwitchSetTime) {	// short UP = next switch
 					tSwitchNo++;
-					if (tSwitchNo > MAX_tSwitch) tSwitchNo = 1;		//loop round
-				} else {																// long UP = reset switch counter
+					if (tSwitchNo > MAX_tSwitch) tSwitchNo = 1;				// loop round
+				} else {													// long UP = reset switch counter
 					tSwitchNo = 1;
+					resetSketch(); // and reboot software!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 				}
 				tSwitchTimerStartOFF = 0;							// empty UP timmer!
 			} 
@@ -901,10 +910,11 @@ void loop() {
 	// No input for 0.5	sec (some frames seen)
 	if (mon0 && monLED_CycleCount > 10 && (monTimeElapse) > 500) {  // 10 frames seen + 0.5 sec 
 		mon0 = false; mon1=true;
-		if (tSwitchValue[MAX_tSwitch-1]) Serial.println("@@@@@@ Lost connection 0.5 sec @@@@@@"); //Debug on
 		// ------------------------------------------
 		// ---- Reset some stuff if input lost!! ----
 		//-------------------------------------------
+
+		if (tSwitchValue[MAX_tSwitch-1]) Serial.println("@@@@@@ Lost connection 0.5 sec @@@@@@"); //Debug on
 		for (int i = 1; i <= maxChannels; i++){
 			if (channelPIN[i] > 0) {
 				digitalWrite(channelPIN[i], LOW); 
@@ -926,6 +936,9 @@ void loop() {
 		digitalWrite(runningLightsFrontPin, LOW); 
 		digitalWrite(runningLightsRearRightPin, LOW); 
 		digitalWrite(runningLightsRearLeftPin, LOW); 
+		// *** Turn on Rear Lights so we know power is on ***   Ch2 ....Pin1 = pin 6
+		//channelTimeCopy[2] = PULSE_LENGTH_MID; 
+		digitalWrite(channelDirectionPIN1[2], HIGH); 
 		//-------------------------------------------		
 	}
 	// No input for 1 sec (some frames seen)
@@ -1025,22 +1038,32 @@ void loop() {
 	if (millis() - debugCyleStart > debugCycleTime) {		//loop for serial input and debug output
 		debugCyleStart = millis();
 		
-// Put debug like:	Serial.print(" -- 8indL: ");	here.
-
+	//  ******* Debug Input ******************
 		if (Serial.available() > 0) {		// Set debug on or off from TTY connection
 			String monSerialRead = Serial.readString();
-			if (monSerialRead == "Debug1\n" || monSerialRead == "d1\n" || monSerialRead == "d1") {
+			monSerialRead.trim();           // remove any \r \n whitespace at the end of the String
+		
+		
+			if (monSerialRead == "h5") digitalWrite(5, HIGH);
+			if (monSerialRead == "l5") digitalWrite(5, LOW);
+			if (monSerialRead == "h6") digitalWrite(6, HIGH);
+			if (monSerialRead == "l6") digitalWrite(6, LOW);
+			if (monSerialRead == "h") Serial.println("Set of pins HIGH.");
+			if (monSerialRead == "l") Serial.println("Set of pins LOW.");
+
+			if (monSerialRead == "Debug1" || monSerialRead == "d1") {
 				Serial.println("Debug is now turned on - Level 1");
 				tSwitchValue[MAX_tSwitch-1] = 1;
-			} else if (monSerialRead == "Debug2\n" || monSerialRead == "d2\n" || monSerialRead == "d2") {
+			} else if (monSerialRead == "Debug2" || monSerialRead == "d2") {
 				Serial.println("Debug is now turned on - Level 2");
 				tSwitchValue[MAX_tSwitch-1] = 2;
-			} else if (monSerialRead == "Debug\n" || monSerialRead == "d3\n" || monSerialRead == "Debug3\n" || monSerialRead == "d3") {
+			} else if (monSerialRead == "Debug" || monSerialRead == "Debug3" || monSerialRead == "d3") {
 				Serial.println("Debug is now turned on - Level 3");
 				tSwitchValue[MAX_tSwitch-1] = 3;
-			} else {
-					Serial.println("Debug is now turned off.  [reminder: Debugx]");
-					tSwitchValue[MAX_tSwitch-1] = 0;
+			}
+			if (monSerialRead == "DebugOFF" || monSerialRead == "off") {
+				Serial.println("Debug is now turned off.  [reminder: Debugx / dx]");
+				tSwitchValue[MAX_tSwitch-1] = 0;
 			}
 		}	
 

@@ -1,0 +1,23 @@
+
+
+(10k resistor) does not seem to be needed for MFU or Receiver
+when connecting to Nano as input for PWM lines.
+
+MFU trailer connector is used as sink for light inputs.
+With 10k pull-up resistor it takes 0.4mA (or 0.2mA for rear light function).
+
+Note:  On Nano pins A6 & A7 and Analog Input only.
+		It appears they do NOT have internal pull-up resistors!!!!
+		despite the documentation indicating that they do.
+		So hard-wired 10K pull-ups are used just on these 2 pins.
+
+Pin D5	for Channel 5	Input is NOT USED. 
+	- Reversing Light via Opto Isolator in LED circuit(pull-up needed) -
+	The truck Reversing Light is only on when moving - for the 
+	Ch5 trailer feed the same setting as the Front/Back Camera is used,
+	worked out by monitoring the Throttle.
+
+Gearbox Control
+	decide if stick or switch being used for Gearbox control
+	channel 6 (left) switch - hold down (high) for 3 seconds to toggle
+	gearboxControlToggle = LOW == stick; HIGH == switch;
