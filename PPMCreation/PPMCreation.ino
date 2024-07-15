@@ -427,6 +427,7 @@ void loop() {
 		if (throttleValue > throttleReverseValue) {		// Brake/Reverse
 			if (reversing) {
 				frameData[5] = propMaxSetting;				// trailer reversing light on
+				if (!gearboxControlToggle) gearboxGear = 1;	// Stick for gear - force 1st gear
 				digitalWrite(cameraPowerPin, HIGH);			// cameras on
 				digitalWrite(cameraControlPin, HIGH);		// rear camera
 				digitalWrite(ctrlCabLightingPin, LOW);		// moving so cab light off
