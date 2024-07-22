@@ -152,8 +152,8 @@ const int propOffSetting = 300;
 const int propMidSetting =500;		
 const int propOnSetting = 700;
 const int propMaxSetting = 1000;
-const int analogOffValue = 300;		// for Analogue input
-const int analogOnValue = 900;		// for Analogue input
+const int analogOffValue = 200;		// for Analogue input
+const int analogOnValue = 800;		// for Analogue input
 
 
 // -------------------------
@@ -398,13 +398,13 @@ void loop() {
 											// Stick = right = up = servo clockwise = gear control backward.
 											//     			 left = 84, 532, right = 984
 				// bool gearboxShiftStarted = false; - so only 1 change per stick move
-			if (!gearboxShiftStarted && gearboxFromMFUValue < propOffSetting) {			// down
+			if (!gearboxShiftStarted && gearboxFromMFUValue < analogOffValue) {			// down
 				gearboxShiftStarted = true;
 				gearboxGear -= 1;
-			} else if (!gearboxShiftStarted && gearboxFromMFUValue > propOnSetting) {	// up
+			} else if (!gearboxShiftStarted && gearboxFromMFUValue > analogOnValue) {	// up
 				gearboxShiftStarted = true;
 				gearboxGear += 1;
-			} else if (gearboxFromMFUValue > propOffSetting && gearboxFromMFUValue < propOnSetting){
+			} else if (gearboxFromMFUValue > analogOffValue && gearboxFromMFUValue < analogOnValue){
 				gearboxShiftStarted = false;
 			}
 		}
