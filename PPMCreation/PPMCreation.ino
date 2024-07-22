@@ -122,7 +122,9 @@ const int gearboxFromMFUPin = 10;			// PWM from MFU to feed to gearbox servo
 const int gearboxServoPin = 11;				// PWM to Gearbox Servo
 int gearboxGear = 2;
 int gearboxGearOld = 1;             // Don't set at 0; valid values - 1 - 1st, 2 = 2nd, 3 = 3rd.
-int gearboxPulseCount = 100;		// controls output to servo and number of pulses to send (high value so no initialisation)
+int gearboxPulseCount = 0;			// number of pulses (frames) sent to gearbox servo 
+int gearboxPulseMax = 25;			// number of pulses (frames) to be sent to gearbox servo 
+int gearboxRetryCount = 0;			// number of extra tries to set required gear
 volatile static unsigned long gearboxStartTime = 0;
 //		used to store a time (micros) during input for pin change interrupt
 volatile static int gearboxFromMFUValue = 500;			// initial value - mid point
@@ -134,6 +136,7 @@ volatile static unsigned long switchStartTime = 0;	// channelPIN[7] = A0
 bool gearboxControlToggle = LOW;       //  Start using Stick -- LOW == stick; HIGH == switch;
 bool gearboxShiftStarted = false;		// Make sure only 1 gear change per stick movement.
 unsigned long tSwitchDownTimerStart = 0;
+unsigned long tSwitchUpTimerStart = 0;
 unsigned long tSwitchTimerNow = 0;
 // Outputs to show what gear we are in
 const int gearboxShowGear1 = 6;
@@ -149,8 +152,6 @@ const int propOffSetting = 300;
 const int propMidSetting =500;		
 const int propOnSetting = 700;
 const int propMaxSetting = 1000;
-//const int analogOffValue = 900;		// for Analogue input (inverted)
-//const int analogOnValue = 300;		// for Analogue input (inverted)
 const int analogOffValue = 300;		// for Analogue input
 const int analogOnValue = 900;		// for Analogue input
 
@@ -161,6 +162,11 @@ const int analogOnValue = 900;		// for Analogue input
 unsigned long frameTime = 0;
 unsigned long nowTime = 0;
 unsigned long monTime = 0;
+
+
+//  Emergency restart of sketch!!!!!  Things happen - should never be needed.
+void(* resetSketch) (void) = 0;
+
 
 // -------------------------
 // Interrupt handler for channelx
@@ -347,23 +353,30 @@ void loop() {
 		frameTime = nowTime;				// set frame output time
 		digitalWrite(LED_BUILTIN, LOW);		// turn off LED
 
-		// =========== Gearbox Control =============	
+		// =========== Gearbox Control (Down Timer) =============	
 			// decide if stick or switch being used for Gearbox control
 			// channel 6 switch - hold down (high) for >2 seconds to toggle
 			// gearboxControlToggle = LOW == stick; HIGH == switch;
+		// =========== Reboot Control (Up Timmer) ================
 		
 		if (frameData[6] > propOffSetting && frameData[6] < propOnSetting) { // if switch not high or low
 				frameData[6] = propMidSetting;								 //     set to mid point
 		} 										// -- a bit redundant as this is a switch not proportional
 		tSwitchTimerNow = millis();
-		if (tSwitchDownTimerStart == 0 && frameData[6] <= propOffSetting) {	// start down timer
-			tSwitchDownTimerStart = tSwitchTimerNow;
-		} 
+		if (tSwitchDownTimerStart == 0 && frameData[6] <= propOffSetting)	// start down timer
+											tSwitchDownTimerStart = tSwitchTimerNow;
+		if (tSwitchUpTimerStart == 0 && frameData[6] >= propOnSetting) 		// start up timer
+											tSwitchUpTimerStart = tSwitchTimerNow; 
 		if (tSwitchDownTimerStart > 0 && frameData[6] == propMidSetting) {	
 															// timer underway & switch back at middle
-			if (tSwitchTimerNow - tSwitchDownTimerStart > 2000) { // switch was held for more than 2s
-				gearboxControlToggle = !gearboxControlToggle;	  // toggle the gearbox control method
-			}
+			if (tSwitchTimerNow - tSwitchDownTimerStart > 2000)	// switch was held for more than 2s
+							gearboxControlToggle = !gearboxControlToggle;	// toggle the gearbox control method
+			tSwitchDownTimerStart = 0;					// reset down timer because switch back at middle
+		}
+		if (tSwitchUpTimerStart > 0 && frameData[6] == propMidSetting) {	
+															// timer underway & switch back at middle
+			if (tSwitchTimerNow - tSwitchUpTimerStart > 2000) 	// switch was held for more than 2s
+												resetSketch();	// reboot
 			tSwitchDownTimerStart = 0;					// reset down timer because switch back at middle
 		}
 
@@ -399,11 +412,12 @@ void loop() {
 		if (gearboxGear != gearboxGearOld) {			// gear being changed
 			if (gearboxGear < 1) gearboxGear = 1;		// allow retry to get into gear
 			if (gearboxGear > 3) gearboxGear = 3;		// allow retry to get into gear
+			if (gearboxGear != gearboxGearOld) gearboxRetryCount = 0;
 			gearboxPulseCount = 0;
-			gearboxGearOld = gearboxGear;			
+			gearboxGearOld = gearboxGear;		
 		}
-
-		if (gearboxPulseCount < 25) {			// 17 or 25 frames used to set servo position
+		
+		if (gearboxPulseCount < gearboxPulseMax) {		// frames (pulses) used to set servo position
 			gearboxPulseCount += 1;
 			digitalWrite(gearboxServoPin, HIGH); 
 
@@ -481,6 +495,13 @@ void loop() {
 	// ============== Output Debug info - Frame data and flash LED
 	if ((millis() - monTime) > 1000) {  // every second
 		digitalWrite(LED_BUILTIN, HIGH);	// turn on LED once a second
+		
+		//gearboxPulseCount = 0;				// make sure gear selected - repeat every second????
+		if (gearboxRetryCount < 1 && gearboxPulseCount >= gearboxPulseMax) {
+			gearboxPulseCount = 0;								// automatic 1? retry to get 
+			gearboxRetryCount += 1;								// into gear in the next second
+		}
+
 		if (debugMode) {
 			Serial.print("Frame:  ");
 			Serial.print("Time: ");
