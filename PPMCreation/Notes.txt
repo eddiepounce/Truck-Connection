@@ -18,6 +18,12 @@ Pin D5	for Channel 5	Input is NOT USED.
 	worked out by monitoring the Throttle.
 
 Gearbox Control
-	decide if stick or switch being used for Gearbox control
+	Decide if stick or switch being used for Gearbox control
 	channel 6 (left) switch - hold down (high) for 3 seconds to toggle
 	gearboxControlToggle = LOW == stick; HIGH == switch;
+
+Reboot Control
+	For an emergency:  Reboot the lorry micro controller:
+	channel 6 (left) switch - hold up (low) for 3 seconds.
+
+
