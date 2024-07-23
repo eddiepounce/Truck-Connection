@@ -34,6 +34,7 @@ I	D9	Yellow			Throttle monitoring (PWM from receiver)  (chip output may be broke
 I	D10	Light Grey		Gearbox Servo (PWM from MFU)	(28awg ribbon #2)
 O	D11	Dark Purple		Feed to Gearbox Servo			(28awg ribbon #3)
 O	D12	Green			Camera Control - Selects forward or reverse camera
+O	D13	Brown			Rear working light on cab - on when in reverse
 I	A0	White 	Ch7	10k	Rx6 - 3 pos switch				(28awg ribbon #1)  (10k resistor) 
 																(PWM from receiver)
 O	A1	Black			RightIndRepeater control
@@ -118,6 +119,7 @@ volatile static bool throttleState = LOW;
 bool braked = false;			// have we braked after going forward?
 bool reversing = false;			// are we now reversing?
 const int ctrlCabLightingPin = 8;			// turns cab lighting on/off
+const int ctrlWorkLightPin = LED_BUILTIN;	// working light (cab rear)
 const int gearboxFromMFUPin = 10;			// PWM from MFU to feed to gearbox servo
 const int gearboxServoPin = 11;				// PWM to Gearbox Servo
 int gearboxGear = 2;
@@ -250,7 +252,6 @@ ISR (PCINT1_vect) {
 void setup() {
 	Serial.begin(115200);
 	if (debugMode) Serial.println("\n--- System Starting ---");
-	pinMode(LED_BUILTIN, OUTPUT);
 	pinMode(outPin, OUTPUT);
 	for (int i = 1; i <= maxChannels; i++){
 		// set the input pins (hardware) as needed.
@@ -290,9 +291,10 @@ void setup() {
 	digitalWrite(cameraControlPin, LOW);	// default is front Camera
 	// setup for switch on Rx6
  
-  // Cab lighting control pin
+  // Cab lighting & Work light control pin
 	pinMode(ctrlCabLightingPin, OUTPUT);
 	digitalWrite(ctrlCabLightingPin, HIGH);		// cab lights on
+	pinMode(ctrlWorkLightPin, OUTPUT);			// Work light (reversing light) in back of Cab
 
   // Marker Lights & Indicator Repeaters
 	pinMode(ctrlSideLights, OUTPUT);
@@ -351,7 +353,7 @@ void loop() {
 		delayMicroseconds(framePulseAndAddition);
 		digitalWrite(outPin, LOW);
 		frameTime = nowTime;				// set frame output time
-		digitalWrite(LED_BUILTIN, LOW);		// turn off LED
+		//digitalWrite(LED_BUILTIN, LOW);		// turn off LED
 
 		// =========== Gearbox Control (Down Timer) =============	
 			// decide if stick or switch being used for Gearbox control
@@ -441,6 +443,7 @@ void loop() {
 		if (throttleValue > throttleReverseValue) {		// Brake/Reverse
 			if (reversing) {
 				frameData[5] = propMaxSetting;				// trailer reversing light on
+				digitalWrite(ctrlWorkLightPin, HIGH);		// work light (rear cab) on
 				if (!gearboxControlToggle) gearboxGear = 1;	// Stick for gear - force 1st gear
 				digitalWrite(cameraPowerPin, HIGH);			// cameras on
 				digitalWrite(cameraControlPin, HIGH);		// rear camera
@@ -458,6 +461,7 @@ void loop() {
 		}
 		if (throttleValue < throttleForwardValue) {		// Forward
 			frameData[5] = propMinSetting;					// trailer reversing light off
+			digitalWrite(ctrlWorkLightPin, LOW);			// work light (rear cab) off
 			digitalWrite(cameraPowerPin, HIGH);				// camera on
 			digitalWrite(cameraControlPin, LOW);			// front camera
 			digitalWrite(ctrlCabLightingPin, LOW);			// moving so cab light off
@@ -494,7 +498,7 @@ void loop() {
 
 	// ============== Output Debug info - Frame data and flash LED
 	if ((millis() - monTime) > 1000) {  // every second
-		digitalWrite(LED_BUILTIN, HIGH);	// turn on LED once a second
+		//digitalWrite(LED_BUILTIN, HIGH);	// turn on LED once a second
 		
 		//gearboxPulseCount = 0;				// make sure gear selected - repeat every second????
 		if (gearboxRetryCount < 1 && gearboxPulseCount >= gearboxPulseMax) {

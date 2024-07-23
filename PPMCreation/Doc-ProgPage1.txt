@@ -34,6 +34,7 @@ I	D9	Yellow			Throttle monitoring (PWM from receiver)  (chip output may be broke
 I	D10	Light Grey		Gearbox Servo (PWM from MFU)	(28awg ribbon #2)
 O	D11	Dark Purple		Feed to Gearbox Servo			(28awg ribbon #3)
 O	D12	Green			Camera Control - Selects forward or reverse camera
+O	D13	Brown			Rear working light on cab - on when in reverse
 I	A0	White 	Ch7	10k	Rx6 - 3 pos switch				(28awg ribbon #1)  (10k resistor) 
 																(PWM from receiver)
 O	A1	Black			RightIndRepeater control
