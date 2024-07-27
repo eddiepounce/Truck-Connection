@@ -27,8 +27,8 @@ I	D3	Green	Ch6	10k	Rx5 - 3 way switch - for Toggle Switch settings on Trailer  (
 								and for Gearbox control method	(PWM from receiver)
 O	D4	White			# IR Emitter (Trailer feed)
 I	D5	Red		Ch5		Input NOT USED - Reversing Light via Opto Isolator in LED circuit(pull-up needed)
-O	D6	Blue			--reserved for gear display	(28awg ribbon #a)
-O	D7	Green			--reserved for gear display	(28awg ribbon #b)
+O	D6	Blue			Gear display	(28awg ribbon #a)
+O	D7	Green			Gear display	(28awg ribbon #b)			????????????????????????
 O	D8	Purple	PWM? 	Cab Lighting Control (takes 0.43mA)
 I	D9	Yellow			Throttle monitoring (PWM from receiver)  (chip output may be broken / may be not)
 I	D10	Light Grey		Gearbox Servo (PWM from MFU)	(28awg ribbon #2)
@@ -282,7 +282,7 @@ void setup() {
 		// enable interrupt for pin...  -- Pin Change Interrupt (PCI)
 	pinMode(gearboxServoPin, OUTPUT);
 	pinMode(gearboxShowGear1, OUTPUT);
-	pinMode(gearboxShowGear1, OUTPUT);
+	pinMode(gearboxShowGear2, OUTPUT);
 
   // Camera power & control pins
 	pinMode(cameraPowerPin, OUTPUT);
@@ -416,7 +416,10 @@ void loop() {
 			if (gearboxGear > 3) gearboxGear = 3;		// allow retry to get into gear
 			if (gearboxGear != gearboxGearOld) gearboxRetryCount = 0;
 			gearboxPulseCount = 0;
-			gearboxGearOld = gearboxGear;		
+			gearboxGearOld = gearboxGear;	
+			if (gearboxGear == 1) {digitalWrite(gearboxShowGear1,HIGH);	digitalWrite(gearboxShowGear2,LOW);}
+			if (gearboxGear == 2) {digitalWrite(gearboxShowGear1,LOW);	digitalWrite(gearboxShowGear2,HIGH);}
+			if (gearboxGear == 3) {digitalWrite(gearboxShowGear1,HIGH);	digitalWrite(gearboxShowGear2,HIGH);}
 		}
 		
 		if (gearboxPulseCount < gearboxPulseMax) {		// frames (pulses) used to set servo position
