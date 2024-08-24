@@ -10,9 +10,10 @@ Create pulse stream - 500us pulses with time between rising edges = RC PWM time 
 		3		Analogue		Indicator	 	(uses trailer connector on MFU)
 		4		Analogue		Indicator	 	(uses trailer connector on MFU)
 		5		On/Off			Reversing Lighting (via Throttle monitoring - sticky ON in Reverse)
-		6		Proportional	3 way sw (centre) - for Toggle Switch on Trailer
-									and for Gearbox control method	(PWM from receiver)
-		7		Proportional	3 way sw (3pos) - for Gearbox		(PWM from receiver)
+		6		Proportional	3 way sw (centre) - for Toggle Switch Set in Trailer
+									(and for Gearbox control method locally)(PWM from receiver)
+		7		Proportional	3 way sw (3pos) - Trailer ramp
+									(and for Gearbox control locally)		(PWM from receiver)
 	Internal use inputs
 		-		Proportional	Throttle Monitor		(PWM from receiver)
 		-		Proportional	Gearbox Servo			(PWM from MFU)
@@ -464,7 +465,9 @@ void loop() {
 		}
 		if (throttleValue < throttleForwardValue) {		// Forward
 			frameData[5] = propMinSetting;					// trailer reversing light off
-			digitalWrite(ctrlWorkLightPin, LOW);			// work light (rear cab) off
+			if (frameData[1] > propOffSetting) {			// If NOT Trailer Legs Down
+				digitalWrite(ctrlWorkLightPin, LOW);		// work light (rear cab) off
+			}							// i.e. leave working light on if 5th Wheel Gate Open
 			digitalWrite(cameraPowerPin, HIGH);				// camera on
 			digitalWrite(cameraControlPin, LOW);			// front camera
 			digitalWrite(ctrlCabLightingPin, LOW);			// moving so cab light off
